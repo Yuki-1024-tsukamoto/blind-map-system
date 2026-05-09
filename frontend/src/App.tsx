@@ -239,6 +239,7 @@ function App() {
     null
   );
   const [mapData, setMapData] = useState<MapResponse | null>(null);
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState<string>("受付");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -323,6 +324,11 @@ function App() {
 
       const data: MapResponse = await response.json();
       setMapData(data);
+
+      if (data.nodes.length > 0) {
+        setCurrentNodeId(data.nodes[0].node_id);
+      }
+
       setCurrentPage("explore");
     } catch (error) {
       setErrorMessage(
@@ -726,11 +732,41 @@ async function approveReviewDescription(descriptionId: string) {
   }
 }
   function handleProjectChange(projectId: string) {
-    setSelectedProjectId(projectId);
-    setMapData(null);
-    setSearchResults([]);
-    setRouteResult(null);
+  setSelectedProjectId(projectId);
+  setMapData(null);
+  setCurrentNodeId(null);
+  setSearchResults([]);
+  setRouteResult(null);
+  setSelectedNodeId(null);
+  setNodeDescriptions([]);
+}
+  function getNeighborNodeIds(nodeId: string, edges: MapEdge[]): string[] {
+  const neighborIds: string[] = [];
+
+  for (const edge of edges) {
+    if (edge.from_node_id === nodeId) {
+      neighborIds.push(edge.to_node_id);
+    }
+
+    const isBidirectional =
+      edge.directionality === "bidirectional" || edge.directionality === undefined;
+
+    if (isBidirectional && edge.to_node_id === nodeId) {
+      neighborIds.push(edge.from_node_id);
+    }
   }
+
+  return Array.from(new Set(neighborIds)).sort();
+}
+
+function moveToNode(nodeId: string) {
+  setCurrentNodeId(nodeId);
+
+  // ノードを移動したら、古い8方向説明表示はいったんクリアする
+  setSelectedNodeId(null);
+  setNodeDescriptions([]);
+  setSelectedSector("front");
+}
 
   function renderProjectPage() {
     return (
@@ -917,11 +953,21 @@ async function approveReviewDescription(descriptionId: string) {
     );
   }
 
-  function renderExplorePage() {
-    const visibleNodes = mapData?.nodes.slice(0, 20) ?? [];
-    const visibleEdges = mapData?.edges.slice(0, 20) ?? [];
+function renderExplorePage() {
+  const visibleNodes = mapData?.nodes.slice(0, 20) ?? [];
+  const visibleEdges = mapData?.edges.slice(0, 20) ?? [];
 
-    return (
+  const currentNode =
+    currentNodeId && mapData
+      ? mapData.nodes.find((node) => node.node_id === currentNodeId) ?? null
+      : null;
+
+  const neighborNodeIds =
+    currentNodeId && mapData
+      ? getNeighborNodeIds(currentNodeId, mapData.edges)
+      : [];
+
+  return (
       <section className="card">
         <h2>探索</h2>
         <p>
@@ -955,6 +1001,58 @@ async function approveReviewDescription(descriptionId: string) {
                 表示負荷を避けるため、この画面では先頭20件だけ表示します。
               </p>
             </div>
+            {currentNode && (
+              <div className="currentNodeBox">
+                <h3>現在ノード</h3>
+                <p>
+                  <strong>{currentNode.node_id}</strong>:{" "}
+                  {currentNode.name ?? "名称未設定"} /{" "}
+                  {currentNode.floor_id ?? "floor未設定"}
+                </p>
+
+                <p>{currentNode.description_ja ?? "説明文は未設定です。"}</p>
+
+                {currentNode.pose && (
+                  <p className="smallText">
+                    pose: x={currentNode.pose.x}, y={currentNode.pose.y}, z=
+                    {currentNode.pose.z ?? 0}, yaw={currentNode.pose.yaw_deg ?? 0}
+                  </p>
+                )}
+
+                {currentNode.media?.keyframe_image && (
+                  <p className="smallText">
+                    keyframe: {currentNode.media.keyframe_image}
+                  </p>
+                )}
+
+                <div className="buttonRow">
+                  <button
+                    type="button"
+                    onClick={() => fetchNodeDescriptions(currentNode.node_id)}
+                  >
+                    このノードの8方向説明を表示
+                  </button>
+                </div>
+
+                <h4>隣接ノードへ移動</h4>
+
+                {neighborNodeIds.length === 0 && <p>隣接ノードがありません。</p>}
+
+                {neighborNodeIds.length > 0 && (
+                  <div className="neighborGrid">
+                    {neighborNodeIds.map((neighborNodeId) => (
+                      <button
+                        key={neighborNodeId}
+                        type="button"
+                        onClick={() => moveToNode(neighborNodeId)}
+                      >
+                        {neighborNodeId} へ移動
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <h3>Nodes</h3>
             <ul className="compactList">
@@ -1003,9 +1101,15 @@ async function approveReviewDescription(descriptionId: string) {
                     </>
                   )}
                   <br />
-                  <button type="button" onClick={() => fetchNodeDescriptions(node.node_id)}>
-                    8方向説明を表示
-                  </button>
+                 <div className="buttonRow">
+                    <button type="button" onClick={() => moveToNode(node.node_id)}>
+                      このノードを現在地にする
+                    </button>
+
+                    <button type="button" onClick={() => fetchNodeDescriptions(node.node_id)}>
+                      8方向説明を表示
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

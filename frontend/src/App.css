@@ -104,3 +104,17 @@ button {
 .muted {
   color: #57606a;
 }
+.currentNodeBox {
+  border: 2px solid #0969da;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  background: #f0f6ff;
+}
+
+.neighborGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
