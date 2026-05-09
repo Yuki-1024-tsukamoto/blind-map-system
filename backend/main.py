@@ -1,6 +1,11 @@
+import json
+import shutil
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -21,6 +26,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# -----------------------------
+# ファイル保存先
+# -----------------------------
+# main.py は backend フォルダ内にあるため、
+# parents[1] でプロジェクト直下 blind-map-system を指します。
+# その下の data/projects にアップロード動画やジョブ情報を保存します。
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_ROOT = PROJECT_ROOT / "data" / "projects"
+
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 
 # -----------------------------
 # データ型の定義
@@ -89,6 +106,25 @@ class RouteResponse(BaseModel):
     instructions_ja: list[str]
     instructions_en: list[str]
 
+class UploadVideoResponse(BaseModel):
+    project_id: str
+    job_id: str
+    filename: str
+    saved_path: str
+    status: str
+    message: str
+
+
+class JobStatusResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    filename: str | None = None
+    saved_path: str | None = None
+    created_at: str
+    updated_at: str
+    error_message: str | None = None
 
 # -----------------------------
 # ダミーデータ
@@ -153,6 +189,41 @@ DUMMY_EDGES = [
     ),
 ]
 
+# -----------------------------
+# ファイル・ジョブ管理の補助関数
+# -----------------------------
+
+
+def get_project_dir(project_id: str) -> Path:
+    return DATA_ROOT / project_id
+
+
+def get_raw_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "raw"
+
+
+def get_jobs_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "jobs"
+
+
+def save_job_status(project_id: str, job_data: dict) -> None:
+    jobs_dir = get_jobs_dir(project_id)
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+
+    job_path = jobs_dir / f"{job_data['job_id']}.json"
+
+    with job_path.open("w", encoding="utf-8") as f:
+        json.dump(job_data, f, ensure_ascii=False, indent=2)
+
+
+def load_job_status(project_id: str, job_id: str) -> dict:
+    job_path = get_jobs_dir(project_id) / f"{job_id}.json"
+
+    if not job_path.exists():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    with job_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 # -----------------------------
 # API
@@ -252,3 +323,76 @@ def get_route(project_id: str, request: RouteRequest):
             "Move from the reception desk to the exhibition entrance.",
         ],
     )
+
+@app.post("/projects/{project_id}/upload-video", response_model=UploadVideoResponse)
+async def upload_video(project_id: str, file: UploadFile = File(...)):
+    # ファイル名が空の場合は受け付けません。
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    original_filename = Path(file.filename).name
+    extension = Path(original_filename).suffix.lower()
+
+    # MVPでは動画ファイルだけを受け付けます。
+    if extension not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {extension}",
+        )
+
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+
+    raw_dir = get_raw_dir(project_id)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    # 同名ファイルの衝突を避けるため、job_id を先頭に付けます。
+    saved_filename = f"{job_id}_{original_filename}"
+    saved_path = raw_dir / saved_filename
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    job_data = {
+        "project_id": project_id,
+        "job_id": job_id,
+        "status": "uploaded",
+        "step": "upload_video",
+        "filename": original_filename,
+        "saved_path": str(saved_path),
+        "created_at": now,
+        "updated_at": now,
+        "error_message": None,
+    }
+
+    try:
+        # 大きい動画でも一度にメモリへ載せないように、
+        # shutil.copyfileobj でストリームとして保存します。
+        with saved_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        save_job_status(project_id, job_data)
+
+    except Exception as error:
+        job_data["status"] = "failed"
+        job_data["error_message"] = str(error)
+        job_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_job_status(project_id, job_data)
+
+        raise HTTPException(status_code=500, detail="Failed to save uploaded video")
+
+    finally:
+        file.file.close()
+
+    return UploadVideoResponse(
+        project_id=project_id,
+        job_id=job_id,
+        filename=original_filename,
+        saved_path=str(saved_path),
+        status="uploaded",
+        message="Video uploaded successfully",
+    )
+
+
+@app.get("/projects/{project_id}/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job_status(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+    return JobStatusResponse(**job_data)
