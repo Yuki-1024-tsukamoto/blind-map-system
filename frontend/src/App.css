@@ -141,3 +141,14 @@ button {
   border-radius: 8px;
   display: block;
 }
+.sectorImageBox {
+  margin: 12px 0;
+}
+
+.sectorImagePreview {
+  width: 100%;
+  max-width: 720px;
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
+  display: block;
+}

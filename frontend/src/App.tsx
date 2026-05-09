@@ -186,6 +186,20 @@ type SectorDescription = {
   notes?: string | null;
 };
 
+type SectorImageInfo = {
+  sector: string;
+  sector_label_ja: string;
+  sector_label_en: string;
+  image_path: string;
+  image_url: string;
+};
+
+type NodeSectorImagesResponse = {
+  project_id: string;
+  node_id: string;
+  images: SectorImageInfo[];
+};
+
 type ReviewTasksResponse = {
   project_id: string;
   task_count: number;
@@ -278,6 +292,9 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeDescriptions, setNodeDescriptions] = useState<SectorDescription[]>([]);
   const [selectedSector, setSelectedSector] = useState<string>("front");
+  const [nodeSectorImages, setNodeSectorImages] = useState<SectorImageInfo[]>([]);
+  const [loadingNodeSectorImages, setLoadingNodeSectorImages] =
+    useState<boolean>(false);
   const [reviewTasks, setReviewTasks] = useState<SectorDescription[]>([]);
   const [loadingReviewTasks, setLoadingReviewTasks] = useState<boolean>(false);
   const [updatingReviewDescriptionId, setUpdatingReviewDescriptionId] =
@@ -453,6 +470,7 @@ function App() {
       setJobStatus(null);
       setPreprocessResult(null);
       setGraphGenerationResult(null);
+      setNodeSectorImages([]);
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -663,6 +681,7 @@ async function fetchNodeDescriptions(nodeId: string) {
 
     const data: NodeDescriptionsResponse = await response.json();
     setNodeDescriptions(data.descriptions);
+    await fetchNodeSectorImages(nodeId);
   } catch (error) {
     setErrorMessage(
       error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -671,7 +690,36 @@ async function fetchNodeDescriptions(nodeId: string) {
     setLoadingNodeDescriptions(false);
   }
 }
+async function fetchNodeSectorImages(nodeId: string) {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
 
+  try {
+    setLoadingNodeSectorImages(true);
+    setErrorMessage("");
+    setNodeSectorImages([]);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/nodes/${nodeId}/sector-images`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`sector画像の取得に失敗しました: ${errorText}`);
+    }
+
+    const data: NodeSectorImagesResponse = await response.json();
+    setNodeSectorImages(data.images);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingNodeSectorImages(false);
+  }
+}
 async function fetchReviewTasks() {
   if (!selectedProjectId) {
     setErrorMessage("プロジェクトが選択されていません。");
@@ -756,6 +804,7 @@ async function approveReviewDescription(descriptionId: string) {
   setRouteResult(null);
   setSelectedNodeId(null);
   setNodeDescriptions([]);
+  setNodeSectorImages([]);
 }
   function getNeighborNodeIds(nodeId: string, edges: MapEdge[]): string[] {
   const neighborIds: string[] = [];
@@ -779,9 +828,9 @@ async function approveReviewDescription(descriptionId: string) {
 function moveToNode(nodeId: string) {
   setCurrentNodeId(nodeId);
 
-  // ノードを移動したら、古い8方向説明表示はいったんクリアする
   setSelectedNodeId(null);
   setNodeDescriptions([]);
+  setNodeSectorImages([]);
   setSelectedSector("front");
 }
 
@@ -1186,29 +1235,54 @@ function renderExplorePage() {
             ))}
           </div>
 
+          {loadingNodeSectorImages && <p>sector画像を読み込み中...</p>}
+
           {nodeDescriptions
             .filter((description) => description.sector === selectedSector)
-            .map((description) => (
-              <div key={description.description_id} className="descriptionPanel">
-                <h4>
-                  {description.sector_label_ja} / {description.sector_label_en}
-                </h4>
+            .map((description) => {
+              const sectorImage = nodeSectorImages.find(
+                (image) => image.sector === description.sector
+              );
 
-                <h5>簡潔</h5>
-                <p>{description.ja.brief}</p>
+              return (
+                <div key={description.description_id} className="descriptionPanel">
+                  <h4>
+                    {description.sector_label_ja} / {description.sector_label_en}
+                  </h4>
 
-                <h5>詳細</h5>
-                <p>{description.ja.detailed}</p>
+                  {sectorImage && (
+                    <div className="sectorImageBox">
+                      <img
+                        src={buildMediaUrl(sectorImage.image_url) ?? ""}
+                        alt={`${selectedNodeId} ${description.sector_label_ja}方向の画像`}
+                        className="sectorImagePreview"
+                      />
+                      <p className="smallText">sector_image: {sectorImage.image_url}</p>
+                    </div>
+                  )}
 
-                <h5>非常に詳細</h5>
-                <p>{description.ja.very_detailed}</p>
+                  {!sectorImage && !loadingNodeSectorImages && (
+                    <p className="smallText">
+                      この方向のsector画像はまだ生成されていません。
+                    </p>
+                  )}
 
-                <p className="smallText">
-                  confidence: {description.confidence} / review_required:{" "}
-                  {String(description.review_required)}
-                </p>
-              </div>
-            ))}
+                  <h5>簡潔</h5>
+                  <p>{description.ja.brief}</p>
+
+                  <h5>詳細</h5>
+                  <p>{description.ja.detailed}</p>
+
+                  <h5>非常に詳細</h5>
+                  <p>{description.ja.very_detailed}</p>
+
+                  <p className="smallText">
+                    confidence: {description.confidence} / review_required:{" "}
+                    {String(description.review_required)}
+                  </p>
+                </div>
+              );
+            })}
         </div>
       )}
           </>
