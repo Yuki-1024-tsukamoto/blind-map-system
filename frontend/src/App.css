@@ -82,3 +82,25 @@ button {
   gap: 8px;
   margin-top: 12px;
 }
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.compactList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.smallText {
+  font-size: 13px;
+  color: #57606a;
+  word-break: break-all;
+}
+
+.muted {
+  color: #57606a;
+}
