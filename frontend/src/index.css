@@ -109,3 +109,28 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+.sectorGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.sectorGrid button {
+  border: 1px solid #d0d7de;
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.sectorGrid .activeSector {
+  border-color: #0969da;
+  background: #ddf4ff;
+  font-weight: 700;
+}
+
+.descriptionPanel {
+  border-top: 1px solid #d0d7de;
+  margin-top: 16px;
+  padding-top: 16px;
+}

@@ -7,10 +7,13 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
+
 from schemas import (
+    GenerateDescriptionsResponse,
     GenerateGraphResponse,
     JobStatusResponse,
     MapResponse,
+    NodeDescriptionsResponse,
     PreprocessResponse,
     Project,
     RouteRequest,
@@ -18,18 +21,21 @@ from schemas import (
     SearchRequest,
     SearchResponse,
     SearchResult,
+    SectorDescription,
     UploadVideoResponse,
     VideoInfoResponse,
 )
 from storage import (
     ALLOWED_VIDEO_EXTENSIONS,
     get_derived_dir,
+    get_descriptions_dir,
     get_graph_dir,
     get_keyframes_dir,
     get_raw_dir,
     load_job_status,
     save_job_status,
     update_job_status,
+    
 )
 from video_processing import get_video_info, preprocess_video_files
 
@@ -39,6 +45,11 @@ from graph_queries import (
     build_route_instructions,
     find_route_in_graph,
     search_graph_nodes,
+)
+
+from sector_descriptions import (
+    generate_dummy_sector_descriptions,
+    load_descriptions_for_node,
 )
 
 app = FastAPI(
@@ -352,74 +363,7 @@ def preprocess_video(project_id: str, job_id: str):
         )
         raise
 
-@app.post(
-    "/projects/{project_id}/jobs/{job_id}/preprocess",
-    response_model=PreprocessResponse,
-)
-def preprocess_video(project_id: str, job_id: str):
-    job_data = load_job_status(project_id, job_id)
 
-    if job_data["status"] not in ["uploaded", "failed", "preprocessed"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job cannot be preprocessed from status: {job_data['status']}",
-        )
-
-    saved_path = job_data.get("saved_path")
-    if not saved_path:
-        raise HTTPException(status_code=400, detail="Uploaded video path is missing")
-
-    input_video_path = Path(saved_path)
-    if not input_video_path.exists():
-        raise HTTPException(status_code=404, detail="Uploaded video file not found")
-
-    derived_dir = get_derived_dir(project_id)
-    keyframes_dir = get_keyframes_dir(project_id)
-
-    derived_dir.mkdir(parents=True, exist_ok=True)
-    keyframes_dir.mkdir(parents=True, exist_ok=True)
-
-    update_job_status(
-        project_id,
-        job_id,
-        {
-            "status": "preprocessing",
-            "step": "preprocess_video",
-            "error_message": None,
-        },
-    )
-
-    # 今回はまだFFmpeg処理は行わない。
-    # 後続ステップで、ここに ocr_master.mp4 / slam_erp.mp4 / keyframes 生成を追加する。
-    marker_path = derived_dir / f"{job_id}_preprocess_placeholder.txt"
-    marker_path.write_text(
-        "Preprocess placeholder completed.\n"
-        "FFmpeg processing will be added in the next step.\n",
-        encoding="utf-8",
-    )
-
-    update_job_status(
-        project_id,
-        job_id,
-        {
-            "status": "preprocessed",
-            "step": "preprocess_video",
-            "derived_dir": str(derived_dir),
-            "keyframes_dir": str(keyframes_dir),
-            "preprocess_marker": str(marker_path),
-            "error_message": None,
-        },
-    )
-
-    return PreprocessResponse(
-        project_id=project_id,
-        job_id=job_id,
-        status="preprocessed",
-        step="preprocess_video",
-        message="Preprocess placeholder completed",
-        derived_dir=str(derived_dir),
-        keyframes_dir=str(keyframes_dir),
-    )
 
 @app.post(
     "/projects/{project_id}/jobs/{job_id}/generate-dummy-graph",
@@ -493,3 +437,109 @@ def generate_dummy_graph(project_id: str, job_id: str):
             },
         )
         raise
+
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/generate-dummy-descriptions",
+    response_model=GenerateDescriptionsResponse,
+)
+def generate_dummy_descriptions(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in [
+        "graph_generated",
+        "dummy_descriptions_generated",
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot generate descriptions from status: {job_data['status']}",
+        )
+
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is None:
+        raise HTTPException(status_code=404, detail="Generated graph not found")
+
+    descriptions_dir = get_descriptions_dir(project_id)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "generating_descriptions",
+            "step": "generate_dummy_descriptions",
+            "error_message": None,
+        },
+    )
+
+    try:
+        result = generate_dummy_sector_descriptions(
+            project_id=project_id,
+            graph=generated_graph,
+            descriptions_dir=descriptions_dir,
+        )
+
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "dummy_descriptions_generated",
+                "step": "generate_dummy_descriptions",
+                "descriptions_path": result["descriptions_path"],
+                "sector_description_count": result["sector_description_count"],
+                "error_message": None,
+            },
+        )
+
+        return GenerateDescriptionsResponse(
+            project_id=project_id,
+            job_id=job_id,
+            status="dummy_descriptions_generated",
+            step="generate_dummy_descriptions",
+            message="Dummy 8-sector descriptions generated",
+            descriptions_path=result["descriptions_path"],
+            node_count=result["node_count"],
+            sector_description_count=result["sector_description_count"],
+        )
+
+    except Exception as error:
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "failed",
+                "step": "generate_dummy_descriptions",
+                "error_message": str(error),
+            },
+        )
+        raise
+
+
+@app.get(
+    "/projects/{project_id}/nodes/{node_id}/descriptions",
+    response_model=NodeDescriptionsResponse,
+)
+def get_node_descriptions(project_id: str, node_id: str):
+    descriptions_dir = get_descriptions_dir(project_id)
+    descriptions = load_descriptions_for_node(descriptions_dir, node_id)
+
+    if descriptions is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Descriptions have not been generated yet",
+        )
+
+    if len(descriptions) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Descriptions for node not found: {node_id}",
+        )
+
+    return NodeDescriptionsResponse(
+        project_id=project_id,
+        node_id=node_id,
+        descriptions=[
+            SectorDescription(**description)
+            for description in descriptions
+        ],
+    )

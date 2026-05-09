@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Project(BaseModel):
@@ -96,6 +96,9 @@ class JobStatusResponse(BaseModel):
     edges_path: str | None = None
     node_count: int | None = None
     edge_count: int | None = None
+    
+    descriptions_path: str | None = None
+    sector_description_count: int | None = None
 
 
 class PreprocessResponse(BaseModel):
@@ -135,3 +138,38 @@ class GenerateGraphResponse(BaseModel):
     node_count: int
     edge_count: int
 
+class SectorText(BaseModel):
+    brief: str
+    detailed: str
+    very_detailed: str
+
+
+class SectorDescription(BaseModel):
+    description_id: str
+    node_id: str
+    sector: str
+    sector_label_ja: str
+    sector_label_en: str
+    ja: SectorText
+    en: SectorText
+    ocr_refs: list[str] = Field(default_factory=list)
+    landmark_refs: list[str] = Field(default_factory=list)
+    confidence: float
+    review_required: bool
+
+
+class GenerateDescriptionsResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    descriptions_path: str
+    node_count: int
+    sector_description_count: int
+
+
+class NodeDescriptionsResponse(BaseModel):
+    project_id: str
+    node_id: str
+    descriptions: list[SectorDescription]

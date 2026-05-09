@@ -129,6 +129,8 @@ type JobStatusResponse = {
   edges_path?: string | null;
   node_count?: number | null;
   edge_count?: number | null;
+  descriptions_path?: string | null;
+  sector_description_count?: number | null;
 };
 
 type PreprocessResponse = {
@@ -156,6 +158,44 @@ type GenerateGraphResponse = {
   node_count: number;
   edge_count: number;
 };
+
+type SectorText = {
+  brief: string;
+  detailed: string;
+  very_detailed: string;
+};
+
+type SectorDescription = {
+  description_id: string;
+  node_id: string;
+  sector: string;
+  sector_label_ja: string;
+  sector_label_en: string;
+  ja: SectorText;
+  en: SectorText;
+  ocr_refs: string[];
+  landmark_refs: string[];
+  confidence: number;
+  review_required: boolean;
+};
+
+type NodeDescriptionsResponse = {
+  project_id: string;
+  node_id: string;
+  descriptions: SectorDescription[];
+};
+
+type GenerateDescriptionsResponse = {
+  project_id: string;
+  job_id: string;
+  status: string;
+  step: string;
+  message: string;
+  descriptions_path: string;
+  node_count: number;
+  sector_description_count: number;
+};
+
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -192,6 +232,11 @@ function App() {
     useState<PreprocessResponse | null>(null);
   const [graphGenerationResult, setGraphGenerationResult] =
     useState<GenerateGraphResponse | null>(null);
+  const [descriptionGenerationResult, setDescriptionGenerationResult] =
+    useState<GenerateDescriptionsResponse | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [nodeDescriptions, setNodeDescriptions] = useState<SectorDescription[]>([]);
+  const [selectedSector, setSelectedSector] = useState<string>("front");
 
   const [loadingProjects, setLoadingProjects] = useState<boolean>(false);
   const [loadingMap, setLoadingMap] = useState<boolean>(false);
@@ -202,7 +247,10 @@ function App() {
   const [loadingPreprocess, setLoadingPreprocess] = useState<boolean>(false);
   const [loadingGraphGeneration, setLoadingGraphGeneration] =
     useState<boolean>(false);
-
+  const [loadingDescriptionGeneration, setLoadingDescriptionGeneration] =
+    useState<boolean>(false);
+  const [loadingNodeDescriptions, setLoadingNodeDescriptions] =
+    useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   useEffect(() => {
@@ -434,6 +482,9 @@ function App() {
       setErrorMessage("");
       setPreprocessResult(null);
       setGraphGenerationResult(null);
+      setDescriptionGenerationResult(null);
+      setNodeDescriptions([]);
+      setSelectedNodeId(null);
 
       const response = await fetch(
         `${API_BASE_URL}/projects/${selectedProjectId}/jobs/${uploadResult.job_id}/preprocess`,
@@ -498,6 +549,78 @@ function App() {
       setLoadingGraphGeneration(false);
     }
   }
+
+  async function generateDummyDescriptions() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  if (!uploadResult) {
+    setErrorMessage("先に動画をアップロードしてください。");
+    return;
+  }
+
+  try {
+    setLoadingDescriptionGeneration(true);
+    setErrorMessage("");
+    setDescriptionGenerationResult(null);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/jobs/${uploadResult.job_id}/generate-dummy-descriptions`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`8方向説明生成に失敗しました: ${errorText}`);
+    }
+
+    const data: GenerateDescriptionsResponse = await response.json();
+    setDescriptionGenerationResult(data);
+    await fetchJobStatus();
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingDescriptionGeneration(false);
+  }
+}
+async function fetchNodeDescriptions(nodeId: string) {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setLoadingNodeDescriptions(true);
+    setErrorMessage("");
+    setSelectedNodeId(nodeId);
+    setNodeDescriptions([]);
+    setSelectedSector("front");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/nodes/${nodeId}/descriptions`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`ノード説明の取得に失敗しました: ${errorText}`);
+    }
+
+    const data: NodeDescriptionsResponse = await response.json();
+    setNodeDescriptions(data.descriptions);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingNodeDescriptions(false);
+  }
+}
 
   function handleProjectChange(projectId: string) {
     setSelectedProjectId(projectId);
@@ -564,6 +687,9 @@ function App() {
               setJobStatus(null);
               setPreprocessResult(null);
               setGraphGenerationResult(null);
+              setDescriptionGenerationResult(null);
+              setNodeDescriptions([]);
+              setSelectedNodeId(null);
             }}
           />
         </div>
@@ -632,17 +758,40 @@ function App() {
             <p>status: {graphGenerationResult.status}</p>
             <p>node_count: {graphGenerationResult.node_count}</p>
             <p>edge_count: {graphGenerationResult.edge_count}</p>
+            <p>  sector_description_count:{" "}
+                {jobStatus?.sector_description_count ?? "未設定"}
+            </p>
             <p className="smallText">
               graph_path: {graphGenerationResult.graph_path}
             </p>
-
+            <div className="buttonRow">
+              <button type="button" onClick={generateDummyDescriptions}>
+                8方向説明を生成
+              </button>
             {selectedProjectId && (
               <button type="button" onClick={() => fetchMap(selectedProjectId)}>
                 生成済みグラフを探索画面で表示
               </button>
             )}
           </div>
+          </div>
         )}
+        {loadingDescriptionGeneration && <p>8方向説明を生成中...</p>}
+
+        {descriptionGenerationResult && (
+         <div className="resultBox">
+          <h3>8方向説明生成結果</h3>
+          <p>status: {descriptionGenerationResult.status}</p>
+          <p>node_count: {descriptionGenerationResult.node_count}</p>
+          <p>
+            sector_description_count:{" "}
+            {descriptionGenerationResult.sector_description_count}
+          </p>
+          <p className="smallText">
+            descriptions_path: {descriptionGenerationResult.descriptions_path}
+          </p>
+        </div>
+      )}
 
         {loadingJobStatus && <p>ジョブ状態を確認中...</p>}
 
@@ -750,6 +899,10 @@ function App() {
                       </span>
                     </>
                   )}
+                  <br />
+                  <button type="button" onClick={() => fetchNodeDescriptions(node.node_id)}>
+                    8方向説明を表示
+                  </button>
                 </li>
               ))}
             </ul>
@@ -768,6 +921,52 @@ function App() {
                 </li>
               ))}
             </ul>
+            {loadingNodeDescriptions && <p>ノードの8方向説明を読み込み中...</p>}
+
+            {selectedNodeId && nodeDescriptions.length > 0 && (
+              <div className="resultBox">
+                <h3>8方向説明: {selectedNodeId}</h3>
+
+                <div className="sectorGrid">
+                  {nodeDescriptions.map((description) => (
+                    <button
+                      key={description.sector}
+                      type="button"
+                      className={
+                        selectedSector === description.sector ? "activeSector" : ""
+                    }
+                    onClick={() => setSelectedSector(description.sector)}
+              >
+                    {description.sector_label_ja}
+                  </button>
+            ))}
+          </div>
+
+          {nodeDescriptions
+            .filter((description) => description.sector === selectedSector)
+            .map((description) => (
+              <div key={description.description_id} className="descriptionPanel">
+                <h4>
+                  {description.sector_label_ja} / {description.sector_label_en}
+                </h4>
+
+                <h5>簡潔</h5>
+                <p>{description.ja.brief}</p>
+
+                <h5>詳細</h5>
+                <p>{description.ja.detailed}</p>
+
+                <h5>非常に詳細</h5>
+                <p>{description.ja.very_detailed}</p>
+
+                <p className="smallText">
+                  confidence: {description.confidence} / review_required:{" "}
+                  {String(description.review_required)}
+                </p>
+              </div>
+            ))}
+        </div>
+      )}
           </>
         )}
       </section>
