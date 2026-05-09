@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
 
@@ -30,6 +31,7 @@ from schemas import (
 )
 from storage import (
     ALLOWED_VIDEO_EXTENSIONS,
+    DATA_ROOT,
     get_derived_dir,
     get_descriptions_dir,
     get_graph_dir,
@@ -38,7 +40,6 @@ from storage import (
     load_job_status,
     save_job_status,
     update_job_status,
-    
 )
 from video_processing import get_video_info, preprocess_video_files
 
@@ -73,7 +74,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.mount(
+    "/data",
+    StaticFiles(directory=str(DATA_ROOT)),
+    name="data",
+)
 
 @app.get("/health")
 def health_check():
@@ -377,7 +382,11 @@ def preprocess_video(project_id: str, job_id: str):
 def generate_dummy_graph(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
 
-    if job_data["status"] not in ["preprocessed", "graph_generated"]:
+    if job_data["status"] not in [
+    "preprocessed",
+    "graph_generated",
+    "dummy_descriptions_generated",
+]:
         raise HTTPException(
             status_code=400,
             detail=f"Job cannot generate graph from status: {job_data['status']}",

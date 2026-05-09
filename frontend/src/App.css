@@ -118,3 +118,26 @@ button {
   gap: 8px;
   margin-top: 8px;
 }
+.imagePreviewBox {
+  margin: 12px 0;
+}
+
+.keyframePreview {
+  width: 100%;
+  max-width: 720px;
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
+  display: block;
+}
+
+.thumbnailBox {
+  margin: 8px 0;
+}
+
+.keyframeThumbnail {
+  width: 240px;
+  max-width: 100%;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  display: block;
+}

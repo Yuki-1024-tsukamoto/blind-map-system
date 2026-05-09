@@ -25,6 +25,7 @@ type Pose = {
 
 type NodeMedia = {
   keyframe_image?: string;
+  keyframe_url?: string;
   erp_image?: string;
 };
 
@@ -221,6 +222,22 @@ type GenerateDescriptionsResponse = {
 
 
 const API_BASE_URL = "http://127.0.0.1:8000";
+
+function buildMediaUrl(pathOrUrl?: string): string | null {
+  if (!pathOrUrl) {
+    return null;
+  }
+
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    return pathOrUrl;
+  }
+
+  if (pathOrUrl.startsWith("/")) {
+    return `${API_BASE_URL}${pathOrUrl}`;
+  }
+
+  return null;
+}
 
 const pageLabels: Record<PageName, string> = {
   projects: "プロジェクト一覧",
@@ -1025,6 +1042,16 @@ function renderExplorePage() {
                   </p>
                 )}
 
+                {buildMediaUrl(currentNode.media?.keyframe_url) && (
+                  <div className="imagePreviewBox">
+                    <img
+                      src={buildMediaUrl(currentNode.media?.keyframe_url) ?? ""}
+                      alt={`${currentNode.node_id} の代表フレーム`}
+                      className="keyframePreview"
+                    />
+                  </div>
+                )}
+
                 <div className="buttonRow">
                   <button
                     type="button"
@@ -1073,6 +1100,16 @@ function renderExplorePage() {
                     <span className="smallText">
                       position: x={node.x}, y={node.y}
                     </span>
+                  )}
+
+                  {buildMediaUrl(node.media?.keyframe_url) && (
+                    <div className="thumbnailBox">
+                      <img
+                        src={buildMediaUrl(node.media?.keyframe_url) ?? ""}
+                        alt={`${node.node_id} の代表フレーム`}
+                        className="keyframeThumbnail"
+                      />
+                    </div>
                   )}
                   {node.media?.keyframe_image && (
                     <>
