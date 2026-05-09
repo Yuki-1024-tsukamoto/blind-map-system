@@ -126,6 +126,15 @@ class JobStatusResponse(BaseModel):
     updated_at: str
     error_message: str | None = None
 
+class PreprocessResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    derived_dir: str
+    keyframes_dir: str
+
 # -----------------------------
 # ダミーデータ
 # -----------------------------
@@ -205,6 +214,12 @@ def get_raw_dir(project_id: str) -> Path:
 def get_jobs_dir(project_id: str) -> Path:
     return get_project_dir(project_id) / "jobs"
 
+def get_derived_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "derived"
+
+
+def get_keyframes_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "frames" / "keyframes"
 
 def save_job_status(project_id: str, job_data: dict) -> None:
     jobs_dir = get_jobs_dir(project_id)
@@ -225,6 +240,15 @@ def load_job_status(project_id: str, job_id: str) -> dict:
     with job_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
+def update_job_status(project_id: str, job_id: str, updates: dict) -> dict:
+    job_data = load_job_status(project_id, job_id)
+
+    job_data.update(updates)
+    job_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    save_job_status(project_id, job_data)
+
+    return job_data
 # -----------------------------
 # API
 # -----------------------------
@@ -396,3 +420,73 @@ async def upload_video(project_id: str, file: UploadFile = File(...)):
 def get_job_status(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
     return JobStatusResponse(**job_data)
+
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/preprocess",
+    response_model=PreprocessResponse,
+)
+def preprocess_video(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in ["uploaded", "failed", "preprocessed"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot be preprocessed from status: {job_data['status']}",
+        )
+
+    saved_path = job_data.get("saved_path")
+    if not saved_path:
+        raise HTTPException(status_code=400, detail="Uploaded video path is missing")
+
+    input_video_path = Path(saved_path)
+    if not input_video_path.exists():
+        raise HTTPException(status_code=404, detail="Uploaded video file not found")
+
+    derived_dir = get_derived_dir(project_id)
+    keyframes_dir = get_keyframes_dir(project_id)
+
+    derived_dir.mkdir(parents=True, exist_ok=True)
+    keyframes_dir.mkdir(parents=True, exist_ok=True)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "preprocessing",
+            "step": "preprocess_video",
+            "error_message": None,
+        },
+    )
+
+    # 今回はまだFFmpeg処理は行わない。
+    # 後続ステップで、ここに ocr_master.mp4 / slam_erp.mp4 / keyframes 生成を追加する。
+    # 代わりに、前処理が完了したことを示す marker file を作る。
+    marker_path = derived_dir / f"{job_id}_preprocess_placeholder.txt"
+    marker_path.write_text(
+        "Preprocess placeholder completed.\n"
+        "FFmpeg processing will be added in the next step.\n",
+        encoding="utf-8",
+    )
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "preprocessed",
+            "step": "preprocess_video",
+            "derived_dir": str(derived_dir),
+            "keyframes_dir": str(keyframes_dir),
+            "preprocess_marker": str(marker_path),
+            "error_message": None,
+        },
+    )
+
+    return PreprocessResponse(
+        project_id=project_id,
+        job_id=job_id,
+        status="preprocessed",
+        step="preprocess_video",
+        message="Preprocess placeholder completed",
+        derived_dir=str(derived_dir),
+        keyframes_dir=str(keyframes_dir),
+    )
