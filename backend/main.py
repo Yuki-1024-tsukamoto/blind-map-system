@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
 from schemas import (
+    GenerateGraphResponse,
     JobStatusResponse,
     MapResponse,
     PreprocessResponse,
@@ -23,6 +24,7 @@ from schemas import (
 from storage import (
     ALLOWED_VIDEO_EXTENSIONS,
     get_derived_dir,
+    get_graph_dir,
     get_keyframes_dir,
     get_raw_dir,
     load_job_status,
@@ -31,6 +33,7 @@ from storage import (
 )
 from video_processing import get_video_info, preprocess_video_files
 
+from graph_generation import generate_dummy_graph_from_keyframes, load_graph
 app = FastAPI(
     title="Blind Map System API",
     description="視覚障碍者向けノードベース探索・経路訓練システムの研究用MVP API",
@@ -70,8 +73,14 @@ def create_project(project: Project):
     return project
 
 
-@app.get("/projects/{project_id}/map", response_model=MapResponse)
+@app.get("/projects/{project_id}/map")
 def get_project_map(project_id: str):
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is not None:
+        return generated_graph
+
     return MapResponse(
         project_id=project_id,
         nodes=DUMMY_NODES,
@@ -362,3 +371,76 @@ def preprocess_video(project_id: str, job_id: str):
         derived_dir=str(derived_dir),
         keyframes_dir=str(keyframes_dir),
     )
+
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/generate-dummy-graph",
+    response_model=GenerateGraphResponse,
+)
+def generate_dummy_graph(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in ["preprocessed", "graph_generated"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot generate graph from status: {job_data['status']}",
+        )
+
+    keyframes_dir = get_keyframes_dir(project_id)
+    graph_dir = get_graph_dir(project_id)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "generating_graph",
+            "step": "generate_dummy_graph",
+            "error_message": None,
+        },
+    )
+
+    try:
+        graph_result = generate_dummy_graph_from_keyframes(
+            project_id=project_id,
+            keyframes_dir=keyframes_dir,
+            graph_dir=graph_dir,
+        )
+
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "graph_generated",
+                "step": "generate_dummy_graph",
+                "graph_path": graph_result["graph_path"],
+                "nodes_path": graph_result["nodes_path"],
+                "edges_path": graph_result["edges_path"],
+                "node_count": graph_result["node_count"],
+                "edge_count": graph_result["edge_count"],
+                "error_message": None,
+            },
+        )
+
+        return GenerateGraphResponse(
+            project_id=project_id,
+            job_id=job_id,
+            status="graph_generated",
+            step="generate_dummy_graph",
+            message="Dummy graph generated from keyframes",
+            graph_path=graph_result["graph_path"],
+            nodes_path=graph_result["nodes_path"],
+            edges_path=graph_result["edges_path"],
+            node_count=graph_result["node_count"],
+            edge_count=graph_result["edge_count"],
+        )
+
+    except Exception as error:
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "failed",
+                "step": "generate_dummy_graph",
+                "error_message": str(error),
+            },
+        )
+        raise

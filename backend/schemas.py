@@ -116,3 +116,16 @@ class VideoInfoResponse(BaseModel):
     avg_frame_rate: str
     duration_sec: float | None = None
     size_bytes: int | None = None
+
+class GenerateGraphResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    graph_path: str
+    nodes_path: str
+    edges_path: str
+    node_count: int
+    edge_count: int
+

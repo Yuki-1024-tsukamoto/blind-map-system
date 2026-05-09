@@ -30,6 +30,9 @@ def get_derived_dir(project_id: str) -> Path:
 def get_keyframes_dir(project_id: str) -> Path:
     return get_project_dir(project_id) / "frames" / "keyframes"
 
+def get_graph_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "graph"
+
 
 def save_job_status(project_id: str, job_data: dict) -> None:
     jobs_dir = get_jobs_dir(project_id)
