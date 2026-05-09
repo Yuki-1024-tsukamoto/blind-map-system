@@ -96,7 +96,7 @@ class JobStatusResponse(BaseModel):
     edges_path: str | None = None
     node_count: int | None = None
     edge_count: int | None = None
-    
+
     descriptions_path: str | None = None
     sector_description_count: int | None = None
 
@@ -157,6 +157,12 @@ class SectorDescription(BaseModel):
     confidence: float
     review_required: bool
 
+    version: int = 1
+    approval_status: str | None = None
+    edited_by: str | None = None
+    edited_at: str | None = None
+    notes: str | None = None
+
 
 class GenerateDescriptionsResponse(BaseModel):
     project_id: str
@@ -173,3 +179,27 @@ class NodeDescriptionsResponse(BaseModel):
     project_id: str
     node_id: str
     descriptions: list[SectorDescription]
+
+class ReviewTasksResponse(BaseModel):
+    project_id: str
+    task_count: int
+    tasks: list[SectorDescription]
+
+
+class ReviewDescriptionRequest(BaseModel):
+    approval_status: Literal["approved", "edited", "rejected"] = "approved"
+    ja: SectorText | None = None
+    en: SectorText | None = None
+    notes: str | None = None
+    edited_by: str = "local_user"
+
+
+class ReviewDescriptionResponse(BaseModel):
+    project_id: str
+    description_id: str
+    node_id: str
+    sector: str
+    approval_status: str
+    review_required: bool
+    version: int
+    message: str

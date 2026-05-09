@@ -16,6 +16,9 @@ from schemas import (
     NodeDescriptionsResponse,
     PreprocessResponse,
     Project,
+    ReviewDescriptionRequest,
+    ReviewDescriptionResponse,
+    ReviewTasksResponse,
     RouteRequest,
     RouteResponse,
     SearchRequest,
@@ -51,6 +54,8 @@ from sector_descriptions import (
     generate_dummy_sector_descriptions,
     load_descriptions_for_node,
 )
+
+from review import list_review_tasks, update_description_review
 
 app = FastAPI(
     title="Blind Map System API",
@@ -542,4 +547,56 @@ def get_node_descriptions(project_id: str, node_id: str):
             SectorDescription(**description)
             for description in descriptions
         ],
+    )
+
+@app.get(
+    "/projects/{project_id}/review/tasks",
+    response_model=ReviewTasksResponse,
+)
+def get_review_tasks(project_id: str, limit: int = 50):
+    descriptions_dir = get_descriptions_dir(project_id)
+    tasks = list_review_tasks(
+        descriptions_dir=descriptions_dir,
+        limit=limit,
+    )
+
+    return ReviewTasksResponse(
+        project_id=project_id,
+        task_count=len(tasks),
+        tasks=[
+            SectorDescription(**task)
+            for task in tasks
+        ],
+    )
+
+
+@app.post(
+    "/projects/{project_id}/review/description/{description_id}",
+    response_model=ReviewDescriptionResponse,
+)
+def review_description(
+    project_id: str,
+    description_id: str,
+    request: ReviewDescriptionRequest,
+):
+    descriptions_dir = get_descriptions_dir(project_id)
+
+    updated_description = update_description_review(
+        descriptions_dir=descriptions_dir,
+        description_id=description_id,
+        review_update=request.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
+    )
+
+    return ReviewDescriptionResponse(
+        project_id=project_id,
+        description_id=description_id,
+        node_id=updated_description["node_id"],
+        sector=updated_description["sector"],
+        approval_status=updated_description["approval_status"],
+        review_required=updated_description["review_required"],
+        version=updated_description["version"],
+        message="Description review updated",
     )
