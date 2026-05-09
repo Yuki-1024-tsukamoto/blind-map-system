@@ -177,6 +177,29 @@ type SectorDescription = {
   landmark_refs: string[];
   confidence: number;
   review_required: boolean;
+
+  version?: number;
+  approval_status?: string | null;
+  edited_by?: string | null;
+  edited_at?: string | null;
+  notes?: string | null;
+};
+
+type ReviewTasksResponse = {
+  project_id: string;
+  task_count: number;
+  tasks: SectorDescription[];
+};
+
+type ReviewDescriptionResponse = {
+  project_id: string;
+  description_id: string;
+  node_id: string;
+  sector: string;
+  approval_status: string;
+  review_required: boolean;
+  version: number;
+  message: string;
 };
 
 type NodeDescriptionsResponse = {
@@ -237,7 +260,11 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeDescriptions, setNodeDescriptions] = useState<SectorDescription[]>([]);
   const [selectedSector, setSelectedSector] = useState<string>("front");
-
+  const [reviewTasks, setReviewTasks] = useState<SectorDescription[]>([]);
+  const [loadingReviewTasks, setLoadingReviewTasks] = useState<boolean>(false);
+  const [updatingReviewDescriptionId, setUpdatingReviewDescriptionId] =
+    useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<string>("");
   const [loadingProjects, setLoadingProjects] = useState<boolean>(false);
   const [loadingMap, setLoadingMap] = useState<boolean>(false);
   const [loadingSearch, setLoadingSearch] = useState<boolean>(false);
@@ -622,6 +649,82 @@ async function fetchNodeDescriptions(nodeId: string) {
   }
 }
 
+async function fetchReviewTasks() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setLoadingReviewTasks(true);
+    setErrorMessage("");
+    setReviewMessage("");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/review/tasks?limit=20`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`レビュー対象の取得に失敗しました: ${errorText}`);
+    }
+
+    const data: ReviewTasksResponse = await response.json();
+    setReviewTasks(data.tasks);
+    setReviewMessage(`レビュー対象を ${data.task_count} 件読み込みました。`);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingReviewTasks(false);
+  }
+}
+async function approveReviewDescription(descriptionId: string) {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setUpdatingReviewDescriptionId(descriptionId);
+    setErrorMessage("");
+    setReviewMessage("");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/review/description/${descriptionId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          approval_status: "approved",
+          notes: "frontend review approval",
+          edited_by: "local_user",
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`レビュー承認に失敗しました: ${errorText}`);
+    }
+
+    const data: ReviewDescriptionResponse = await response.json();
+    setReviewMessage(
+      `${data.description_id} を承認しました。version=${data.version}`
+    );
+
+    await fetchReviewTasks();
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setUpdatingReviewDescriptionId(null);
+  }
+}
   function handleProjectChange(projectId: string) {
     setSelectedProjectId(projectId);
     setMapData(null);
@@ -1077,25 +1180,84 @@ async function fetchNodeDescriptions(nodeId: string) {
   }
 
   function renderReviewPage() {
-    return (
-      <section className="card">
-        <h2>レビュー</h2>
-        <p>
-          ここには、後で低信頼の説明文だけを確認・修正するレビューUIを追加します。
-        </p>
+  return (
+    <section className="card">
+      <h2>レビュー</h2>
+      <p>
+        review_required=true の8方向説明だけを取得し、description単位で承認します。
+      </p>
 
-        <div className="placeholderBox">
-          <p>予定する機能</p>
-          <ul>
-            <li>低信頼descriptionの一覧表示</li>
-            <li>画像・OCR結果・説明文の同時確認</li>
-            <li>承認 / 編集 / 差し戻し</li>
+      <button type="button" onClick={fetchReviewTasks}>
+        レビュー対象を読み込む
+      </button>
+
+      {loadingReviewTasks && <p>レビュー対象を読み込み中...</p>}
+
+      {reviewMessage && (
+        <div className="resultBox">
+          <p>{reviewMessage}</p>
+        </div>
+      )}
+
+      {!loadingReviewTasks && reviewTasks.length === 0 && (
+        <p>レビュー対象はまだ読み込まれていません。</p>
+      )}
+
+      {reviewTasks.length > 0 && (
+        <div className="resultBox">
+          <h3>レビュー対象一覧</h3>
+          <p>表示件数: {reviewTasks.length}</p>
+
+          <ul className="compactList">
+            {reviewTasks.map((task) => (
+              <li key={task.description_id}>
+                <strong>{task.description_id}</strong>
+                <br />
+                node: {task.node_id} / sector: {task.sector_label_ja} (
+                {task.sector})
+                <br />
+                <span className="smallText">
+                  confidence: {task.confidence} / review_required:{" "}
+                  {String(task.review_required)} / version:{" "}
+                  {task.version ?? 1}
+                </span>
+
+                <h4>簡潔説明</h4>
+                <p>{task.ja.brief}</p>
+
+                <h4>詳細説明</h4>
+                <p>{task.ja.detailed}</p>
+
+                <div className="buttonRow">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      approveReviewDescription(task.description_id)
+                    }
+                    disabled={
+                      updatingReviewDescriptionId === task.description_id
+                    }
+                  >
+                    {updatingReviewDescriptionId === task.description_id
+                      ? "承認中..."
+                      : "承認する"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fetchNodeDescriptions(task.node_id)}
+                  >
+                    探索用の8方向説明として確認
+                  </button>
+                </div>
+              </li>
+            ))}
           </ul>
         </div>
-      </section>
-    );
-  }
-
+      )}
+    </section>
+  );
+}
   function renderCurrentPage() {
     if (currentPage === "projects") return renderProjectPage();
     if (currentPage === "upload") return renderUploadPage();
