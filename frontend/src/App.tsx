@@ -80,6 +80,16 @@ type JobStatusResponse = {
   error_message: string | null;
 };
 
+type PreprocessResponse = {
+  project_id: string;
+  job_id: string;
+  status: string;
+  step: string;
+  message: string;
+  derived_dir: string;
+  keyframes_dir: string;
+};
+
 const API_BASE_URL = "http://127.0.0.1:8000";
 
 const pageLabels: Record<PageName, string> = {
@@ -111,7 +121,9 @@ function App() {
   const [jobStatus, setJobStatus] = useState<JobStatusResponse | null>(null);
   const [loadingUpload, setLoadingUpload] = useState<boolean>(false);
   const [loadingJobStatus, setLoadingJobStatus] = useState<boolean>(false);
-
+  const [preprocessResult, setPreprocessResult] =
+    useState<PreprocessResponse | null>(null);
+  const [loadingPreprocess, setLoadingPreprocess] = useState<boolean>(false);
 
   
   const [loadingProjects, setLoadingProjects] = useState<boolean>(false);
@@ -267,6 +279,7 @@ function App() {
     setErrorMessage("");
     setUploadResult(null);
     setJobStatus(null);
+    setPreprocessResult(null);
 
     const formData = new FormData();
     formData.append("file", selectedFile);
@@ -328,6 +341,47 @@ function App() {
     setLoadingJobStatus(false);
   }
  }
+ async function startPreprocess() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  if (!uploadResult) {
+    setErrorMessage("先に動画をアップロードしてください。");
+    return;
+  }
+
+  try {
+    setLoadingPreprocess(true);
+    setErrorMessage("");
+    setPreprocessResult(null);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/jobs/${uploadResult.job_id}/preprocess`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`前処理の開始に失敗しました: ${errorText}`);
+    }
+
+    const data: PreprocessResponse = await response.json();
+    setPreprocessResult(data);
+
+    // 前処理完了後、ジョブ状態も最新化する
+    await fetchJobStatus();
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingPreprocess(false);
+  }
+}
   function handleProjectChange(projectId: string) {
     setSelectedProjectId(projectId);
     setMapData(null);
@@ -385,12 +439,13 @@ function renderProjectPage() {
           id="videoFile"
           type="file"
           accept=".mp4,.mov,.avi,.mkv,video/*"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            setSelectedFile(file);
-            setUploadResult(null);
-            setJobStatus(null);
-          }}
+         onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          setSelectedFile(file);
+          setUploadResult(null);
+          setJobStatus(null);
+          setPreprocessResult(null);
+        }}
         />
       </div>
 
@@ -416,11 +471,29 @@ function renderProjectPage() {
           <p>filename: {uploadResult.filename}</p>
           <p>message: {uploadResult.message}</p>
 
-          <button type="button" onClick={fetchJobStatus}>
-            ジョブ状態を確認
-          </button>
+          <div className="buttonRow">
+            <button type="button" onClick={fetchJobStatus}>
+              ジョブ状態を確認
+            </button>
+
+            <button type="button" onClick={startPreprocess}>
+              前処理を開始
+            </button>
+          </div>
         </div>
-      )}
+)}
+      {loadingPreprocess && <p>前処理中...</p>}
+
+      {preprocessResult && (
+        <div className="resultBox">
+          <h3>前処理結果</h3>
+          <p>status: {preprocessResult.status}</p>
+          <p>step: {preprocessResult.step}</p>
+          <p>message: {preprocessResult.message}</p>
+          <p>derived_dir: {preprocessResult.derived_dir}</p>
+          <p>keyframes_dir: {preprocessResult.keyframes_dir}</p>
+        </div>
+)}
 
       {loadingJobStatus && <p>ジョブ状態を確認中...</p>}
 

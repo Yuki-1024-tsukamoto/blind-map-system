@@ -76,3 +76,9 @@ button {
   margin-bottom: 20px;
   background: #fff5f5;
 }
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
