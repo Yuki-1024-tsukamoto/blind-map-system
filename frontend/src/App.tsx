@@ -31,14 +31,44 @@ type MapResponse = {
   edges: Edge[];
 };
 
+type SearchResult = {
+  node_id: string;
+  name: string;
+  matched_text: string;
+};
+
+type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+};
+
+type RouteResponse = {
+  start_node_id: string;
+  goal_node_id: string;
+  mode: string;
+  route: string[];
+  instructions_ja: string[];
+  instructions_en: string[];
+};
+
 const API_BASE_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [mapData, setMapData] = useState<MapResponse | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState<string>("受付");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  const [startNodeId, setStartNodeId] = useState<string>("N001");
+  const [goalNodeId, setGoalNodeId] = useState<string>("N003");
+  const [routeResult, setRouteResult] = useState<RouteResponse | null>(null);
+
   const [loadingProjects, setLoadingProjects] = useState<boolean>(false);
   const [loadingMap, setLoadingMap] = useState<boolean>(false);
+  const [loadingSearch, setLoadingSearch] = useState<boolean>(false);
+  const [loadingRoute, setLoadingRoute] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   useEffect(() => {
@@ -93,9 +123,90 @@ function App() {
     }
   }
 
+  async function searchProject() {
+    if (!selectedProjectId) {
+      setErrorMessage("プロジェクトが選択されていません。");
+      return;
+    }
+
+    try {
+      setLoadingSearch(true);
+      setErrorMessage("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/projects/${selectedProjectId}/search`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            language: "ja",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("検索に失敗しました。");
+      }
+
+      const data: SearchResponse = await response.json();
+      setSearchResults(data.results);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "不明なエラーが発生しました。"
+      );
+    } finally {
+      setLoadingSearch(false);
+    }
+  }
+
+  async function calculateRoute() {
+    if (!selectedProjectId) {
+      setErrorMessage("プロジェクトが選択されていません。");
+      return;
+    }
+
+    try {
+      setLoadingRoute(true);
+      setErrorMessage("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/projects/${selectedProjectId}/route`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            start_node_id: startNodeId,
+            goal_node_id: goalNodeId,
+            mode: "shortest",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("経路検索に失敗しました。");
+      }
+
+      const data: RouteResponse = await response.json();
+      setRouteResult(data);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "不明なエラーが発生しました。"
+      );
+    } finally {
+      setLoadingRoute(false);
+    }
+  }
+
   function handleProjectChange(projectId: string) {
     setSelectedProjectId(projectId);
     setMapData(null);
+    setSearchResults([]);
+    setRouteResult(null);
   }
 
   return (
@@ -172,6 +283,97 @@ function App() {
               ))}
             </ul>
           </>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>3. 検索</h2>
+        <p>説明文やノード名に含まれる語を検索します。</p>
+
+        <div className="formRow">
+          <label htmlFor="searchQuery">検索語</label>
+          <input
+            id="searchQuery"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="例: 受付"
+          />
+        </div>
+
+        <button type="button" onClick={searchProject}>
+          検索する
+        </button>
+
+        {loadingSearch && <p>検索中...</p>}
+
+        {searchResults.length > 0 && (
+          <div className="resultBox">
+            <h3>検索結果</h3>
+            <ul>
+              {searchResults.map((result) => (
+                <li key={result.node_id}>
+                  <strong>{result.node_id}</strong>: {result.name}
+                  <br />
+                  {result.matched_text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!loadingSearch && searchResults.length === 0 && (
+          <p>検索結果はまだありません。</p>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>4. 経路訓練</h2>
+        <p>出発ノードと目的ノードを指定して、ダミールートを表示します。</p>
+
+        <div className="formRow">
+          <label htmlFor="startNodeId">出発ノード</label>
+          <input
+            id="startNodeId"
+            value={startNodeId}
+            onChange={(event) => setStartNodeId(event.target.value)}
+            placeholder="例: N001"
+          />
+        </div>
+
+        <div className="formRow">
+          <label htmlFor="goalNodeId">目的ノード</label>
+          <input
+            id="goalNodeId"
+            value={goalNodeId}
+            onChange={(event) => setGoalNodeId(event.target.value)}
+            placeholder="例: N003"
+          />
+        </div>
+
+        <button type="button" onClick={calculateRoute}>
+          経路を計算する
+        </button>
+
+        {loadingRoute && <p>経路を計算中...</p>}
+
+        {routeResult && (
+          <div className="resultBox">
+            <h3>経路結果</h3>
+            <p>
+              {routeResult.start_node_id} → {routeResult.goal_node_id} /{" "}
+              {routeResult.mode}
+            </p>
+
+            <h4>Route</h4>
+            <p>{routeResult.route.join(" → ")}</p>
+
+            <h4>Instructions</h4>
+            <ol>
+              {routeResult.instructions_ja.map((instruction, index) => (
+                <li key={`${instruction}-${index}`}>{instruction}</li>
+              ))}
+            </ol>
+          </div>
         )}
       </section>
 
