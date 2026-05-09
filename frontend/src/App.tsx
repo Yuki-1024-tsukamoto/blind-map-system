@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+type PageName =
+  | "projects"
+  | "upload"
+  | "explore"
+  | "search"
+  | "route"
+  | "review";
+
 type Project = {
   project_id: string;
   title: string;
@@ -53,7 +61,18 @@ type RouteResponse = {
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
+const pageLabels: Record<PageName, string> = {
+  projects: "プロジェクト一覧",
+  upload: "アップロード",
+  explore: "探索",
+  search: "検索",
+  route: "経路訓練",
+  review: "レビュー",
+};
+
 function App() {
+  const [currentPage, setCurrentPage] = useState<PageName>("projects");
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [mapData, setMapData] = useState<MapResponse | null>(null);
@@ -114,6 +133,7 @@ function App() {
 
       const data: MapResponse = await response.json();
       setMapData(data);
+      setCurrentPage("explore");
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -209,17 +229,10 @@ function App() {
     setRouteResult(null);
   }
 
-  return (
-    <main className="app">
-      <header className="appHeader">
-        <h1>Blind Map System MVP</h1>
-        <p>
-          360度動画から生成されるノードベース探索マップの研究用プロトタイプです。
-        </p>
-      </header>
-
+  function renderProjectPage() {
+    return (
       <section className="card">
-        <h2>1. プロジェクト一覧</h2>
+        <h2>プロジェクト一覧</h2>
 
         {loadingProjects && <p>プロジェクト一覧を読み込み中...</p>}
 
@@ -246,18 +259,49 @@ function App() {
 
         {selectedProjectId && (
           <button type="button" onClick={() => fetchMap(selectedProjectId)}>
-            地図データを読み込む
+            地図データを読み込んで探索画面へ
           </button>
         )}
       </section>
+    );
+  }
 
+  function renderUploadPage() {
+    return (
       <section className="card">
-        <h2>2. 地図データ</h2>
+        <h2>アップロード</h2>
+        <p>
+          ここには、後で360度動画をアップロードする機能を追加します。
+          現時点では画面構成だけを先に作っています。
+        </p>
+
+        <div className="placeholderBox">
+          <p>予定する機能</p>
+          <ul>
+            <li>360度動画ファイルの選択</li>
+            <li>アップロード進捗の表示</li>
+            <li>処理待ち / 処理中 / 完了 / 失敗 の表示</li>
+          </ul>
+        </div>
+      </section>
+    );
+  }
+
+  function renderExplorePage() {
+    return (
+      <section className="card">
+        <h2>探索</h2>
+        <p>
+          現在は、backendから取得したダミーのノードとエッジを表示します。
+        </p>
 
         {loadingMap && <p>地図データを読み込み中...</p>}
 
         {mapData === null && !loadingMap && (
-          <p>まだ地図データは読み込まれていません。</p>
+          <p>
+            まだ地図データは読み込まれていません。プロジェクト一覧から
+            「地図データを読み込んで探索画面へ」を押してください。
+          </p>
         )}
 
         {mapData && (
@@ -285,9 +329,13 @@ function App() {
           </>
         )}
       </section>
+    );
+  }
 
+  function renderSearchPage() {
+    return (
       <section className="card">
-        <h2>3. 検索</h2>
+        <h2>検索</h2>
         <p>説明文やノード名に含まれる語を検索します。</p>
 
         <div className="formRow">
@@ -325,9 +373,13 @@ function App() {
           <p>検索結果はまだありません。</p>
         )}
       </section>
+    );
+  }
 
+  function renderRoutePage() {
+    return (
       <section className="card">
-        <h2>4. 経路訓練</h2>
+        <h2>経路訓練</h2>
         <p>出発ノードと目的ノードを指定して、ダミールートを表示します。</p>
 
         <div className="formRow">
@@ -376,6 +428,60 @@ function App() {
           </div>
         )}
       </section>
+    );
+  }
+
+  function renderReviewPage() {
+    return (
+      <section className="card">
+        <h2>レビュー</h2>
+        <p>
+          ここには、後で低信頼の説明文だけを確認・修正するレビューUIを追加します。
+          現時点では画面構成だけを先に作っています。
+        </p>
+
+        <div className="placeholderBox">
+          <p>予定する機能</p>
+          <ul>
+            <li>低信頼descriptionの一覧表示</li>
+            <li>画像・OCR結果・説明文の同時確認</li>
+            <li>承認 / 編集 / 差し戻し</li>
+          </ul>
+        </div>
+      </section>
+    );
+  }
+
+  function renderCurrentPage() {
+    if (currentPage === "projects") return renderProjectPage();
+    if (currentPage === "upload") return renderUploadPage();
+    if (currentPage === "explore") return renderExplorePage();
+    if (currentPage === "search") return renderSearchPage();
+    if (currentPage === "route") return renderRoutePage();
+    return renderReviewPage();
+  }
+
+  return (
+    <main className="app">
+      <header className="appHeader">
+        <h1>Blind Map System MVP</h1>
+        <p>
+          360度動画から生成されるノードベース探索マップの研究用プロトタイプです。
+        </p>
+      </header>
+
+      <nav className="navTabs" aria-label="画面切り替え">
+        {(Object.keys(pageLabels) as PageName[]).map((pageName) => (
+          <button
+            key={pageName}
+            type="button"
+            className={currentPage === pageName ? "activeTab" : ""}
+            onClick={() => setCurrentPage(pageName)}
+          >
+            {pageLabels[pageName]}
+          </button>
+        ))}
+      </nav>
 
       {errorMessage && (
         <section className="errorBox">
@@ -383,6 +489,8 @@ function App() {
           <p>{errorMessage}</p>
         </section>
       )}
+
+      {renderCurrentPage()}
     </main>
   );
 }
