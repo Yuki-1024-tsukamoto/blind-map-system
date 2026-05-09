@@ -1,13 +1,33 @@
-import json
 import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+
+from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
+from schemas import (
+    JobStatusResponse,
+    MapResponse,
+    PreprocessResponse,
+    Project,
+    RouteRequest,
+    RouteResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
+    UploadVideoResponse,
+)
+from storage import (
+    ALLOWED_VIDEO_EXTENSIONS,
+    get_derived_dir,
+    get_keyframes_dir,
+    get_raw_dir,
+    load_job_status,
+    save_job_status,
+    update_job_status,
+)
 
 
 app = FastAPI(
@@ -26,232 +46,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# -----------------------------
-# ファイル保存先
-# -----------------------------
-# main.py は backend フォルダ内にあるため、
-# parents[1] でプロジェクト直下 blind-map-system を指します。
-# その下の data/projects にアップロード動画やジョブ情報を保存します。
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_ROOT = PROJECT_ROOT / "data" / "projects"
-
-ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
-
-# -----------------------------
-# データ型の定義
-# -----------------------------
-# ここではまだDBは使わず、Pythonのリストと辞書でダミーデータを返します。
-# 後でOpenSfMやOCRの結果を読み込むときも、この形式に近づけていきます。
-
-
-class Project(BaseModel):
-    project_id: str
-    title: str
-    facility_type: str
-    status: str
-
-
-class Node(BaseModel):
-    node_id: str
-    name: str
-    floor_id: str
-    x: float
-    y: float
-    description_ja: str
-    description_en: str
-
-
-class Edge(BaseModel):
-    edge_id: str
-    from_node_id: str
-    to_node_id: str
-    direction: str
-
-
-class MapResponse(BaseModel):
-    project_id: str
-    nodes: list[Node]
-    edges: list[Edge]
-
-
-class SearchRequest(BaseModel):
-    query: str
-    language: Literal["ja", "en"] = "ja"
-
-
-class SearchResult(BaseModel):
-    node_id: str
-    name: str
-    matched_text: str
-
-
-class SearchResponse(BaseModel):
-    query: str
-    results: list[SearchResult]
-
-
-class RouteRequest(BaseModel):
-    start_node_id: str
-    goal_node_id: str
-    mode: Literal["shortest", "landmark"] = "shortest"
-
-
-class RouteResponse(BaseModel):
-    start_node_id: str
-    goal_node_id: str
-    mode: str
-    route: list[str]
-    instructions_ja: list[str]
-    instructions_en: list[str]
-
-class UploadVideoResponse(BaseModel):
-    project_id: str
-    job_id: str
-    filename: str
-    saved_path: str
-    status: str
-    message: str
-
-
-class JobStatusResponse(BaseModel):
-    project_id: str
-    job_id: str
-    status: str
-    step: str
-    filename: str | None = None
-    saved_path: str | None = None
-    created_at: str
-    updated_at: str
-    error_message: str | None = None
-
-class PreprocessResponse(BaseModel):
-    project_id: str
-    job_id: str
-    status: str
-    step: str
-    message: str
-    derived_dir: str
-    keyframes_dir: str
-
-# -----------------------------
-# ダミーデータ
-# -----------------------------
-# まずは3つのノードだけで、探索・検索・経路の流れを確認します。
-# 実動画処理が入ると、この部分が自動生成データに置き換わります。
-
-
-DUMMY_PROJECTS = [
-    Project(
-        project_id="demo",
-        title="Museum Demo",
-        facility_type="exhibition",
-        status="ready",
-    )
-]
-
-
-DUMMY_NODES = [
-    Node(
-        node_id="N001",
-        name="入口",
-        floor_id="F1",
-        x=0.0,
-        y=0.0,
-        description_ja="入口です。前方に受付があり、右側に展示室への通路があります。",
-        description_en="This is the entrance. The reception desk is ahead, and the exhibition corridor is on the right.",
-    ),
-    Node(
-        node_id="N002",
-        name="受付",
-        floor_id="F1",
-        x=1.0,
-        y=0.0,
-        description_ja="受付カウンターです。案内表示とパンフレットがあります。",
-        description_en="This is the reception counter. There are information signs and brochures.",
-    ),
-    Node(
-        node_id="N003",
-        name="展示室入口",
-        floor_id="F1",
-        x=2.0,
-        y=0.0,
-        description_ja="展示室の入口です。左側に展示パネル、右側に順路案内があります。",
-        description_en="This is the entrance to the exhibition room. There is an exhibit panel on the left and route guidance on the right.",
-    ),
-]
-
-
-DUMMY_EDGES = [
-    Edge(
-        edge_id="E001",
-        from_node_id="N001",
-        to_node_id="N002",
-        direction="forward",
-    ),
-    Edge(
-        edge_id="E002",
-        from_node_id="N002",
-        to_node_id="N003",
-        direction="forward",
-    ),
-]
-
-# -----------------------------
-# ファイル・ジョブ管理の補助関数
-# -----------------------------
-
-
-def get_project_dir(project_id: str) -> Path:
-    return DATA_ROOT / project_id
-
-
-def get_raw_dir(project_id: str) -> Path:
-    return get_project_dir(project_id) / "raw"
-
-
-def get_jobs_dir(project_id: str) -> Path:
-    return get_project_dir(project_id) / "jobs"
-
-def get_derived_dir(project_id: str) -> Path:
-    return get_project_dir(project_id) / "derived"
-
-
-def get_keyframes_dir(project_id: str) -> Path:
-    return get_project_dir(project_id) / "frames" / "keyframes"
-
-def save_job_status(project_id: str, job_data: dict) -> None:
-    jobs_dir = get_jobs_dir(project_id)
-    jobs_dir.mkdir(parents=True, exist_ok=True)
-
-    job_path = jobs_dir / f"{job_data['job_id']}.json"
-
-    with job_path.open("w", encoding="utf-8") as f:
-        json.dump(job_data, f, ensure_ascii=False, indent=2)
-
-
-def load_job_status(project_id: str, job_id: str) -> dict:
-    job_path = get_jobs_dir(project_id) / f"{job_id}.json"
-
-    if not job_path.exists():
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    with job_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-def update_job_status(project_id: str, job_id: str, updates: dict) -> dict:
-    job_data = load_job_status(project_id, job_id)
-
-    job_data.update(updates)
-    job_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-
-    save_job_status(project_id, job_data)
-
-    return job_data
-# -----------------------------
-# API
-# -----------------------------
 
 
 @app.get("/health")
@@ -348,16 +142,15 @@ def get_route(project_id: str, request: RouteRequest):
         ],
     )
 
+
 @app.post("/projects/{project_id}/upload-video", response_model=UploadVideoResponse)
 async def upload_video(project_id: str, file: UploadFile = File(...)):
-    # ファイル名が空の場合は受け付けません。
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
-    # MVPでは動画ファイルだけを受け付けます。
     if extension not in ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
@@ -369,7 +162,6 @@ async def upload_video(project_id: str, file: UploadFile = File(...)):
     raw_dir = get_raw_dir(project_id)
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    # 同名ファイルの衝突を避けるため、job_id を先頭に付けます。
     saved_filename = f"{job_id}_{original_filename}"
     saved_path = raw_dir / saved_filename
 
@@ -388,8 +180,6 @@ async def upload_video(project_id: str, file: UploadFile = File(...)):
     }
 
     try:
-        # 大きい動画でも一度にメモリへ載せないように、
-        # shutil.copyfileobj でストリームとして保存します。
         with saved_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -420,6 +210,7 @@ async def upload_video(project_id: str, file: UploadFile = File(...)):
 def get_job_status(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
     return JobStatusResponse(**job_data)
+
 
 @app.post(
     "/projects/{project_id}/jobs/{job_id}/preprocess",
@@ -460,7 +251,6 @@ def preprocess_video(project_id: str, job_id: str):
 
     # 今回はまだFFmpeg処理は行わない。
     # 後続ステップで、ここに ocr_master.mp4 / slam_erp.mp4 / keyframes 生成を追加する。
-    # 代わりに、前処理が完了したことを示す marker file を作る。
     marker_path = derived_dir / f"{job_id}_preprocess_placeholder.txt"
     marker_path.write_text(
         "Preprocess placeholder completed.\n"

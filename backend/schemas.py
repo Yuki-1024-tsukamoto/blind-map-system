@@ -1,0 +1,96 @@
+from typing import Literal
+
+from pydantic import BaseModel
+
+
+class Project(BaseModel):
+    project_id: str
+    title: str
+    facility_type: str
+    status: str
+
+
+class Node(BaseModel):
+    node_id: str
+    name: str
+    floor_id: str
+    x: float
+    y: float
+    description_ja: str
+    description_en: str
+
+
+class Edge(BaseModel):
+    edge_id: str
+    from_node_id: str
+    to_node_id: str
+    direction: str
+
+
+class MapResponse(BaseModel):
+    project_id: str
+    nodes: list[Node]
+    edges: list[Edge]
+
+
+class SearchRequest(BaseModel):
+    query: str
+    language: Literal["ja", "en"] = "ja"
+
+
+class SearchResult(BaseModel):
+    node_id: str
+    name: str
+    matched_text: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: list[SearchResult]
+
+
+class RouteRequest(BaseModel):
+    start_node_id: str
+    goal_node_id: str
+    mode: Literal["shortest", "landmark"] = "shortest"
+
+
+class RouteResponse(BaseModel):
+    start_node_id: str
+    goal_node_id: str
+    mode: str
+    route: list[str]
+    instructions_ja: list[str]
+    instructions_en: list[str]
+
+
+class UploadVideoResponse(BaseModel):
+    project_id: str
+    job_id: str
+    filename: str
+    saved_path: str
+    status: str
+    message: str
+
+
+class JobStatusResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    filename: str | None = None
+    saved_path: str | None = None
+    created_at: str
+    updated_at: str
+    error_message: str | None = None
+
+
+class PreprocessResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    derived_dir: str
+    keyframes_dir: str
+    
