@@ -180,8 +180,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState<string>("受付");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
-  const [startNodeId, setStartNodeId] = useState<string>("N001");
-  const [goalNodeId, setGoalNodeId] = useState<string>("N003");
+  const [startNodeId, setStartNodeId] = useState<string>("N0001");
+  const [goalNodeId, setGoalNodeId] = useState<string>("N0010");
   const [routeResult, setRouteResult] = useState<RouteResponse | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -779,7 +779,7 @@ function App() {
       <section className="card">
         <h2>検索</h2>
         <p>
-          現段階では、検索APIはまだ旧ダミーデータを検索します。次以降で生成済みグラフ検索に差し替えます。
+          生成済みgraph.jsonのノードID、仮ノード名、説明文を検索します。次以降で生成済みグラフ検索に差し替えます。
         </p>
 
         <div className="formRow">
@@ -825,7 +825,7 @@ function App() {
       <section className="card">
         <h2>経路訓練</h2>
         <p>
-          現段階では、経路APIは旧ダミールートを使います。次以降で生成済みグラフのエッジを使う経路計算に差し替えます。
+          生成済みgraph.jsonのエッジを使って、出発ノードから目的ノードまでの経路を計算します。次以降で生成済みグラフのエッジを使う経路計算に差し替えます。
         </p>
 
         <div className="formRow">
@@ -834,7 +834,7 @@ function App() {
             id="startNodeId"
             value={startNodeId}
             onChange={(event) => setStartNodeId(event.target.value)}
-            placeholder="例: N001"
+            placeholder="例: N0001"
           />
         </div>
 
@@ -844,7 +844,7 @@ function App() {
             id="goalNodeId"
             value={goalNodeId}
             onChange={(event) => setGoalNodeId(event.target.value)}
-            placeholder="例: N003"
+            placeholder="例: N0010"
           />
         </div>
 

@@ -91,6 +91,12 @@ class JobStatusResponse(BaseModel):
     keyframe_count: int | None = None
     preprocess_marker: str | None = None
 
+    graph_path: str | None = None
+    nodes_path: str | None = None
+    edges_path: str | None = None
+    node_count: int | None = None
+    edge_count: int | None = None
+
 
 class PreprocessResponse(BaseModel):
     project_id: str

@@ -34,6 +34,13 @@ from storage import (
 from video_processing import get_video_info, preprocess_video_files
 
 from graph_generation import generate_dummy_graph_from_keyframes, load_graph
+
+from graph_queries import (
+    build_route_instructions,
+    find_route_in_graph,
+    search_graph_nodes,
+)
+
 app = FastAPI(
     title="Blind Map System API",
     description="視覚障碍者向けノードベース探索・経路訓練システムの研究用MVP API",
@@ -90,6 +97,28 @@ def get_project_map(project_id: str):
 
 @app.post("/projects/{project_id}/search", response_model=SearchResponse)
 def search_project(project_id: str, request: SearchRequest):
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is not None:
+        graph_results = search_graph_nodes(
+            graph=generated_graph,
+            query=request.query,
+            language=request.language,
+        )
+
+        return SearchResponse(
+            query=request.query,
+            results=[
+                SearchResult(
+                    node_id=result["node_id"],
+                    name=result["name"],
+                    matched_text=result["matched_text"],
+                )
+                for result in graph_results
+            ],
+        )
+
     results: list[SearchResult] = []
 
     for node in DUMMY_NODES:
@@ -115,8 +144,28 @@ def search_project(project_id: str, request: SearchRequest):
 
 @app.post("/projects/{project_id}/route", response_model=RouteResponse)
 def get_route(project_id: str, request: RouteRequest):
-    # 今は非常に単純なダミールートです。
-    # N001 -> N002 -> N003 の一本道だけを想定します。
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is not None:
+        route = find_route_in_graph(
+            graph=generated_graph,
+            start_node_id=request.start_node_id,
+            goal_node_id=request.goal_node_id,
+        )
+
+        instructions_ja, instructions_en = build_route_instructions(route)
+
+        return RouteResponse(
+            start_node_id=route[0] if route else request.start_node_id,
+            goal_node_id=route[-1] if route else request.goal_node_id,
+            mode=request.mode,
+            route=route,
+            instructions_ja=instructions_ja,
+            instructions_en=instructions_en,
+        )
+
+    # graph.json がまだない場合は、従来の3ノードダミールートを使う。
     all_route = ["N001", "N002", "N003"]
 
     try:
