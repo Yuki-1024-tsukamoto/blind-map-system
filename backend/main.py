@@ -12,9 +12,11 @@ from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
 from schemas import (
     GenerateDescriptionsResponse,
     GenerateGraphResponse,
+    GenerateSectorImagesResponse,
     JobStatusResponse,
     MapResponse,
     NodeDescriptionsResponse,
+    NodeSectorImagesResponse,
     PreprocessResponse,
     Project,
     ReviewDescriptionRequest,
@@ -26,6 +28,7 @@ from schemas import (
     SearchResponse,
     SearchResult,
     SectorDescription,
+    SectorImageInfo,
     UploadVideoResponse,
     VideoInfoResponse,
 )
@@ -37,9 +40,14 @@ from storage import (
     get_graph_dir,
     get_keyframes_dir,
     get_raw_dir,
+    get_sectors_dir,
     load_job_status,
     save_job_status,
     update_job_status,
+)
+from sector_images import (
+    generate_sector_images_from_graph,
+    load_sector_images_for_node,
 )
 from video_processing import get_video_info, preprocess_video_files
 
@@ -617,4 +625,111 @@ def review_description(
         review_required=updated_description["review_required"],
         version=updated_description["version"],
         message="Description review updated",
+    )
+
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/generate-sector-images",
+    response_model=GenerateSectorImagesResponse,
+)
+def generate_sector_images(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in [
+        "graph_generated",
+        "dummy_descriptions_generated",
+        "sector_images_generated",
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot generate sector images from status: {job_data['status']}",
+        )
+
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is None:
+        raise HTTPException(status_code=404, detail="Generated graph not found")
+
+    sectors_dir = get_sectors_dir(project_id)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "generating_sector_images",
+            "step": "generate_sector_images",
+            "error_message": None,
+        },
+    )
+
+    try:
+        result = generate_sector_images_from_graph(
+            project_id=project_id,
+            graph=generated_graph,
+            sectors_dir=sectors_dir,
+        )
+
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "sector_images_generated",
+                "step": "generate_sector_images",
+                "sectors_dir": result["sectors_dir"],
+                "sector_image_count": result["sector_image_count"],
+                "error_message": None,
+            },
+        )
+
+        return GenerateSectorImagesResponse(
+            project_id=project_id,
+            job_id=job_id,
+            status="sector_images_generated",
+            step="generate_sector_images",
+            message="8-sector images generated",
+            sectors_dir=result["sectors_dir"],
+            node_count=result["node_count"],
+            sector_image_count=result["sector_image_count"],
+        )
+
+    except Exception as error:
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "failed",
+                "step": "generate_sector_images",
+                "error_message": str(error),
+            },
+        )
+        raise
+
+
+@app.get(
+    "/projects/{project_id}/nodes/{node_id}/sector-images",
+    response_model=NodeSectorImagesResponse,
+)
+def get_node_sector_images(project_id: str, node_id: str):
+    sectors_dir = get_sectors_dir(project_id)
+    images = load_sector_images_for_node(sectors_dir, node_id)
+
+    if images is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Sector images have not been generated yet",
+        )
+
+    if len(images) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Sector images for node not found: {node_id}",
+        )
+
+    return NodeSectorImagesResponse(
+        project_id=project_id,
+        node_id=node_id,
+        images=[
+            SectorImageInfo(**image)
+            for image in images
+        ],
     )

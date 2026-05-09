@@ -100,6 +100,9 @@ class JobStatusResponse(BaseModel):
     descriptions_path: str | None = None
     sector_description_count: int | None = None
 
+    sectors_dir: str | None = None
+    sector_image_count: int | None = None
+
 
 class PreprocessResponse(BaseModel):
     project_id: str
@@ -203,3 +206,27 @@ class ReviewDescriptionResponse(BaseModel):
     review_required: bool
     version: int
     message: str
+
+class SectorImageInfo(BaseModel):
+    sector: str
+    sector_label_ja: str
+    sector_label_en: str
+    image_path: str
+    image_url: str
+
+
+class GenerateSectorImagesResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    sectors_dir: str
+    node_count: int
+    sector_image_count: int
+
+
+class NodeSectorImagesResponse(BaseModel):
+    project_id: str
+    node_id: str
+    images: list[SectorImageInfo]
