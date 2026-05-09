@@ -94,3 +94,14 @@ class PreprocessResponse(BaseModel):
     derived_dir: str
     keyframes_dir: str
     
+class VideoInfoResponse(BaseModel):
+    project_id: str
+    job_id: str
+    path: str
+    filename: str
+    width: int | None = None
+    height: int | None = None
+    codec_name: str | None = None
+    avg_frame_rate: str
+    duration_sec: float | None = None
+    size_bytes: int | None = None

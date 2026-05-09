@@ -18,6 +18,7 @@ from schemas import (
     SearchResponse,
     SearchResult,
     UploadVideoResponse,
+    VideoInfoResponse,
 )
 from storage import (
     ALLOWED_VIDEO_EXTENSIONS,
@@ -28,7 +29,7 @@ from storage import (
     save_job_status,
     update_job_status,
 )
-
+from video_processing import get_video_info
 
 app = FastAPI(
     title="Blind Map System API",
@@ -211,6 +212,24 @@ def get_job_status(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
     return JobStatusResponse(**job_data)
 
+@app.get(
+    "/projects/{project_id}/jobs/{job_id}/video-info",
+    response_model=VideoInfoResponse,
+)
+def get_uploaded_video_info(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    saved_path = job_data.get("saved_path")
+    if not saved_path:
+        raise HTTPException(status_code=400, detail="Uploaded video path is missing")
+
+    info = get_video_info(Path(saved_path))
+
+    return VideoInfoResponse(
+        project_id=project_id,
+        job_id=job_id,
+        **info,
+    )
 
 @app.post(
     "/projects/{project_id}/jobs/{job_id}/preprocess",
