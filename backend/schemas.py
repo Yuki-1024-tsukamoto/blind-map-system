@@ -84,6 +84,13 @@ class JobStatusResponse(BaseModel):
     updated_at: str
     error_message: str | None = None
 
+    derived_dir: str | None = None
+    keyframes_dir: str | None = None
+    ocr_master_path: str | None = None
+    slam_erp_path: str | None = None
+    keyframe_count: int | None = None
+    preprocess_marker: str | None = None
+
 
 class PreprocessResponse(BaseModel):
     project_id: str
@@ -93,7 +100,11 @@ class PreprocessResponse(BaseModel):
     message: str
     derived_dir: str
     keyframes_dir: str
-    
+    ocr_master_path: str | None = None
+    slam_erp_path: str | None = None
+    keyframe_count: int = 0
+
+
 class VideoInfoResponse(BaseModel):
     project_id: str
     job_id: str

@@ -29,7 +29,7 @@ from storage import (
     save_job_status,
     update_job_status,
 )
-from video_processing import get_video_info
+from video_processing import get_video_info, preprocess_video_files
 
 app = FastAPI(
     title="Blind Map System API",
@@ -212,24 +212,87 @@ def get_job_status(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
     return JobStatusResponse(**job_data)
 
-@app.get(
-    "/projects/{project_id}/jobs/{job_id}/video-info",
-    response_model=VideoInfoResponse,
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/preprocess",
+    response_model=PreprocessResponse,
 )
-def get_uploaded_video_info(project_id: str, job_id: str):
+def preprocess_video(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in ["uploaded", "failed", "preprocessed"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot be preprocessed from status: {job_data['status']}",
+        )
 
     saved_path = job_data.get("saved_path")
     if not saved_path:
         raise HTTPException(status_code=400, detail="Uploaded video path is missing")
 
-    info = get_video_info(Path(saved_path))
+    input_video_path = Path(saved_path)
+    if not input_video_path.exists():
+        raise HTTPException(status_code=404, detail="Uploaded video file not found")
 
-    return VideoInfoResponse(
-        project_id=project_id,
-        job_id=job_id,
-        **info,
+    derived_dir = get_derived_dir(project_id)
+    keyframes_dir = get_keyframes_dir(project_id)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "preprocessing",
+            "step": "preprocess_video",
+            "error_message": None,
+        },
     )
+
+    try:
+        preprocess_result = preprocess_video_files(
+            input_video_path=input_video_path,
+            derived_dir=derived_dir,
+            keyframes_dir=keyframes_dir,
+            interval_sec=1,
+        )
+
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "preprocessed",
+                "step": "preprocess_video",
+                "derived_dir": str(derived_dir),
+                "keyframes_dir": str(keyframes_dir),
+                "ocr_master_path": preprocess_result["ocr_master_path"],
+                "slam_erp_path": preprocess_result["slam_erp_path"],
+                "keyframe_count": preprocess_result["keyframe_count"],
+                "error_message": None,
+            },
+        )
+
+        return PreprocessResponse(
+            project_id=project_id,
+            job_id=job_id,
+            status="preprocessed",
+            step="preprocess_video",
+            message="Video preprocessing completed",
+            derived_dir=str(derived_dir),
+            keyframes_dir=str(keyframes_dir),
+            ocr_master_path=preprocess_result["ocr_master_path"],
+            slam_erp_path=preprocess_result["slam_erp_path"],
+            keyframe_count=preprocess_result["keyframe_count"],
+        )
+
+    except Exception as error:
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "failed",
+                "step": "preprocess_video",
+                "error_message": str(error),
+            },
+        )
+        raise
 
 @app.post(
     "/projects/{project_id}/jobs/{job_id}/preprocess",
