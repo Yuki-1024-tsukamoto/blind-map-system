@@ -59,6 +59,27 @@ type RouteResponse = {
   instructions_en: string[];
 };
 
+type UploadVideoResponse = {
+  project_id: string;
+  job_id: string;
+  filename: string;
+  saved_path: string;
+  status: string;
+  message: string;
+};
+
+type JobStatusResponse = {
+  project_id: string;
+  job_id: string;
+  status: string;
+  step: string;
+  filename: string | null;
+  saved_path: string | null;
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+};
+
 const API_BASE_URL = "http://127.0.0.1:8000";
 
 const pageLabels: Record<PageName, string> = {
@@ -84,6 +105,15 @@ function App() {
   const [goalNodeId, setGoalNodeId] = useState<string>("N003");
   const [routeResult, setRouteResult] = useState<RouteResponse | null>(null);
 
+  // ここに追加
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadVideoResponse | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatusResponse | null>(null);
+  const [loadingUpload, setLoadingUpload] = useState<boolean>(false);
+  const [loadingJobStatus, setLoadingJobStatus] = useState<boolean>(false);
+
+
+  
   const [loadingProjects, setLoadingProjects] = useState<boolean>(false);
   const [loadingMap, setLoadingMap] = useState<boolean>(false);
   const [loadingSearch, setLoadingSearch] = useState<boolean>(false);
@@ -221,71 +251,196 @@ function App() {
       setLoadingRoute(false);
     }
   }
+  async function uploadVideo() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
 
+  if (!selectedFile) {
+    setErrorMessage("アップロードする動画ファイルを選択してください。");
+    return;
+  }
+
+  try {
+    setLoadingUpload(true);
+    setErrorMessage("");
+    setUploadResult(null);
+    setJobStatus(null);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/upload-video`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`動画アップロードに失敗しました: ${errorText}`);
+    }
+
+    const data: UploadVideoResponse = await response.json();
+    setUploadResult(data);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingUpload(false);
+  }
+  }
+  async function fetchJobStatus() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  if (!uploadResult) {
+    setErrorMessage("先に動画をアップロードしてください。");
+    return;
+  }
+
+  try {
+    setLoadingJobStatus(true);
+    setErrorMessage("");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/jobs/${uploadResult.job_id}`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`ジョブ状態の取得に失敗しました: ${errorText}`);
+    }
+
+    const data: JobStatusResponse = await response.json();
+    setJobStatus(data);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingJobStatus(false);
+  }
+ }
   function handleProjectChange(projectId: string) {
     setSelectedProjectId(projectId);
     setMapData(null);
     setSearchResults([]);
     setRouteResult(null);
   }
+function renderProjectPage() {
+  return (
+    <section className="card">
+      <h2>プロジェクト一覧</h2>
 
-  function renderProjectPage() {
-    return (
-      <section className="card">
-        <h2>プロジェクト一覧</h2>
+      {loadingProjects && <p>プロジェクト一覧を読み込み中...</p>}
 
-        {loadingProjects && <p>プロジェクト一覧を読み込み中...</p>}
+      {!loadingProjects && projects.length === 0 && (
+        <p>プロジェクトがありません。</p>
+      )}
 
-        {!loadingProjects && projects.length === 0 && (
-          <p>プロジェクトがありません。</p>
-        )}
-
-        {projects.length > 0 && (
-          <div className="formRow">
-            <label htmlFor="projectSelect">プロジェクトを選択</label>
-            <select
-              id="projectSelect"
-              value={selectedProjectId ?? ""}
-              onChange={(event) => handleProjectChange(event.target.value)}
-            >
-              {projects.map((project) => (
-                <option key={project.project_id} value={project.project_id}>
-                  {project.title} / {project.status}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {selectedProjectId && (
-          <button type="button" onClick={() => fetchMap(selectedProjectId)}>
-            地図データを読み込んで探索画面へ
-          </button>
-        )}
-      </section>
-    );
-  }
-
-  function renderUploadPage() {
-    return (
-      <section className="card">
-        <h2>アップロード</h2>
-        <p>
-          ここには、後で360度動画をアップロードする機能を追加します。
-          現時点では画面構成だけを先に作っています。
-        </p>
-
-        <div className="placeholderBox">
-          <p>予定する機能</p>
-          <ul>
-            <li>360度動画ファイルの選択</li>
-            <li>アップロード進捗の表示</li>
-            <li>処理待ち / 処理中 / 完了 / 失敗 の表示</li>
-          </ul>
+      {projects.length > 0 && (
+        <div className="formRow">
+          <label htmlFor="projectSelect">プロジェクトを選択</label>
+          <select
+            id="projectSelect"
+            value={selectedProjectId ?? ""}
+            onChange={(event) => handleProjectChange(event.target.value)}
+          >
+            {projects.map((project) => (
+              <option key={project.project_id} value={project.project_id}>
+                {project.title} / {project.status}
+              </option>
+            ))}
+          </select>
         </div>
-      </section>
-    );
-  }
+      )}
+
+      {selectedProjectId && (
+        <button type="button" onClick={() => fetchMap(selectedProjectId)}>
+          地図データを読み込んで探索画面へ
+        </button>
+      )}
+    </section>
+  );
+}
+ function renderUploadPage() {
+  return (
+    <section className="card">
+      <h2>アップロード</h2>
+      <p>
+        360度動画ファイルを選択し、backendへアップロードします。
+        現時点では、動画処理は行わず、rawフォルダへの保存とjob_idの発行だけを行います。
+      </p>
+
+      <div className="formRow">
+        <label htmlFor="videoFile">動画ファイル</label>
+        <input
+          id="videoFile"
+          type="file"
+          accept=".mp4,.mov,.avi,.mkv,video/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            setSelectedFile(file);
+            setUploadResult(null);
+            setJobStatus(null);
+          }}
+        />
+      </div>
+
+      {selectedFile && (
+        <div className="resultBox">
+          <h3>選択中のファイル</h3>
+          <p>ファイル名: {selectedFile.name}</p>
+          <p>サイズ: {(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+        </div>
+      )}
+
+      <button type="button" onClick={uploadVideo}>
+        アップロードする
+      </button>
+
+      {loadingUpload && <p>アップロード中...</p>}
+
+      {uploadResult && (
+        <div className="resultBox">
+          <h3>アップロード結果</h3>
+          <p>status: {uploadResult.status}</p>
+          <p>job_id: {uploadResult.job_id}</p>
+          <p>filename: {uploadResult.filename}</p>
+          <p>message: {uploadResult.message}</p>
+
+          <button type="button" onClick={fetchJobStatus}>
+            ジョブ状態を確認
+          </button>
+        </div>
+      )}
+
+      {loadingJobStatus && <p>ジョブ状態を確認中...</p>}
+
+      {jobStatus && (
+        <div className="resultBox">
+          <h3>ジョブ状態</h3>
+          <p>status: {jobStatus.status}</p>
+          <p>step: {jobStatus.step}</p>
+          <p>filename: {jobStatus.filename}</p>
+          <p>created_at: {jobStatus.created_at}</p>
+          <p>updated_at: {jobStatus.updated_at}</p>
+          {jobStatus.error_message && (
+            <p>error_message: {jobStatus.error_message}</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 
   function renderExplorePage() {
     return (
