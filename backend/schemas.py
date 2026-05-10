@@ -267,3 +267,15 @@ class NodeOCRResponse(BaseModel):
     project_id: str
     node_id: str
     results: list[OCRResult]
+
+class GenerateAndSaveDescriptionResponse(BaseModel):
+    project_id: str
+    node_id: str
+    sector: str
+    description_id: str
+    provider: str
+    version: int
+    confidence: float
+    review_required: bool
+    message: str
+    updated_description: SectorDescription
