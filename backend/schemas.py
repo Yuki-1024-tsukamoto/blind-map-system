@@ -279,3 +279,13 @@ class GenerateAndSaveDescriptionResponse(BaseModel):
     review_required: bool
     message: str
     updated_description: SectorDescription
+
+class GenerateNodeDescriptionsResponse(BaseModel):
+    project_id: str
+    node_id: str
+    provider: str
+    updated_count: int
+    failed_count: int
+    updated_description_ids: list[str]
+    failed_sectors: list[str]
+    message: str

@@ -13,6 +13,7 @@ from schemas import (
     GenerateAndSaveDescriptionResponse,
     GenerateDescriptionsResponse,
     GenerateGraphResponse,
+    GenerateNodeDescriptionsResponse,
     GenerateSectorImagesResponse,
     JobStatusResponse,
     MapResponse,
@@ -96,6 +97,17 @@ from settings import (
     get_openai_api_key,
     get_openai_description_model,
 )
+
+SECTOR_IDS = [
+    "front",
+    "front_right",
+    "right",
+    "back_right",
+    "back",
+    "back_left",
+    "left",
+    "front_left",
+]
 
 app = FastAPI(
     title="Blind Map System API",
@@ -1127,4 +1139,100 @@ def generate_and_save_gemini_description_for_one_sector(
         review_required=updated_description["review_required"],
         message="Gemini description generated and saved",
         updated_description=SectorDescription(**updated_description),
+    )
+
+@app.post(
+    "/projects/{project_id}/nodes/{node_id}/generate-gemini-descriptions",
+    response_model=GenerateNodeDescriptionsResponse,
+)
+def generate_gemini_descriptions_for_one_node(
+    project_id: str,
+    node_id: str,
+):
+    graph_dir = get_graph_dir(project_id)
+    generated_graph = load_graph(graph_dir)
+
+    if generated_graph is None:
+        raise HTTPException(status_code=404, detail="Generated graph not found")
+
+    node = None
+    for candidate in generated_graph.get("nodes", []):
+        if candidate.get("node_id") == node_id:
+            node = candidate
+            break
+
+    if node is None:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+    sectors_dir = get_sectors_dir(project_id)
+    sector_images = load_sector_images_for_node(sectors_dir, node_id)
+
+    if sector_images is None:
+        raise HTTPException(status_code=404, detail="Sector images not generated")
+
+    ocr_dir = get_ocr_dir(project_id)
+    ocr_results = load_ocr_results_for_node(ocr_dir, node_id) or []
+
+    descriptions_dir = get_descriptions_dir(project_id)
+
+    provider = GeminiDescriptionProvider(
+        api_key=get_gemini_api_key(),
+        prompt_text=load_prompt_text(),
+        model=get_gemini_description_model(),
+    )
+
+    updated_description_ids: list[str] = []
+    failed_sectors: list[str] = []
+
+    for sector in SECTOR_IDS:
+        target_sector_image = None
+        for image in sector_images:
+            if image.get("sector") == sector:
+                target_sector_image = image
+                break
+
+        if target_sector_image is None:
+            failed_sectors.append(sector)
+            continue
+
+        ocr_results_for_sector = [
+            result for result in ocr_results if result.get("sector") == sector
+        ]
+
+        try:
+            generated_result = provider.generate_sector_description(
+                node_id=node_id,
+                node_name=node.get("name", node_id),
+                sector=sector,
+                sector_label_ja=target_sector_image.get("sector_label_ja", sector),
+                sector_label_en=target_sector_image.get("sector_label_en", sector),
+                sector_image_url=target_sector_image.get("image_url"),
+                sector_image_path=target_sector_image.get("image_path"),
+                ocr_results=ocr_results_for_sector,
+            )
+
+            description_id = f"DESC_{node_id}_{sector}"
+
+            update_description_from_ai_generation(
+                descriptions_dir=descriptions_dir,
+                description_id=description_id,
+                generated_result=generated_result,
+                provider_name="gemini",
+            )
+
+            updated_description_ids.append(description_id)
+
+        except Exception:
+            failed_sectors.append(sector)
+            continue
+
+    return GenerateNodeDescriptionsResponse(
+        project_id=project_id,
+        node_id=node_id,
+        provider="gemini",
+        updated_count=len(updated_description_ids),
+        failed_count=len(failed_sectors),
+        updated_description_ids=updated_description_ids,
+        failed_sectors=failed_sectors,
+        message="Gemini descriptions generated for one node",
     )
