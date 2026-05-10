@@ -58,3 +58,11 @@ Return only valid JSON in the following structure:
 - Use very_detailed descriptions for additional context.
 - Avoid emotional or decorative language unless relevant.
 - If uncertain, lower confidence and set review_required to true.
+
+## Privacy and Dynamic Objects
+
+- Do not describe a person's face, gaze direction, clothing, or appearance unless it is necessary for immediate navigation or safety.
+- If people are visible, mention them only briefly as dynamic objects, for example: "A person is visible in this sector."
+- Do not treat people as landmarks.
+- Prefer fixed environmental information such as signs, exits, doors, stairs, elevators, counters, rooms, and obstacles.
+- If the image contains people or uncertain OCR, set review_required to true.

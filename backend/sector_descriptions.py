@@ -52,6 +52,22 @@ def get_sector_image_url(
 
     return None
 
+def get_sector_image_path(
+    sector_images_data: dict[str, Any] | None,
+    node_id: str,
+    sector: str,
+) -> str | None:
+    if sector_images_data is None:
+        return None
+
+    images_by_node = sector_images_data.get("images_by_node", {})
+    sector_images = images_by_node.get(node_id, [])
+
+    for image in sector_images:
+        if image.get("sector") == sector:
+            return image.get("image_path")
+
+    return None
 
 def get_ocr_results_for_sector(
     ocr_data: dict[str, Any] | None,
@@ -117,6 +133,11 @@ def generate_dummy_sector_descriptions(
                 node_id=node_id,
                 sector=sector_id,
             )
+            sector_image_path = get_sector_image_path(
+                sector_images_data=sector_images_data,
+                node_id=node_id,
+                sector=sector_id,
+            )
 
             ocr_results = get_ocr_results_for_sector(
                 ocr_data=ocr_data,
@@ -132,6 +153,7 @@ def generate_dummy_sector_descriptions(
                 sector_label_en=sector_label_en,
                 sector_image_url=sector_image_url,
                 ocr_results=ocr_results,
+                sector_image_path=sector_image_path,
             )
 
             description = {
