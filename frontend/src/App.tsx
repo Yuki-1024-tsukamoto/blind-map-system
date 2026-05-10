@@ -200,6 +200,29 @@ type NodeSectorImagesResponse = {
   images: SectorImageInfo[];
 };
 
+type OCRBBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type OCRResult = {
+  ocr_id: string;
+  node_id: string;
+  sector: string;
+  text: string;
+  language_hint: string;
+  bbox: OCRBBox;
+  confidence: number;
+};
+
+type NodeOCRResponse = {
+  project_id: string;
+  node_id: string;
+  results: OCRResult[];
+};
+
 type ReviewTasksResponse = {
   project_id: string;
   task_count: number;
@@ -294,6 +317,9 @@ function App() {
   const [selectedSector, setSelectedSector] = useState<string>("front");
   const [nodeSectorImages, setNodeSectorImages] = useState<SectorImageInfo[]>([]);
   const [loadingNodeSectorImages, setLoadingNodeSectorImages] =
+    useState<boolean>(false);
+  const [nodeOCRResults, setNodeOCRResults] = useState<OCRResult[]>([]);
+  const [loadingNodeOCRResults, setLoadingNodeOCRResults] =
     useState<boolean>(false);
   const [reviewTasks, setReviewTasks] = useState<SectorDescription[]>([]);
   const [loadingReviewTasks, setLoadingReviewTasks] = useState<boolean>(false);
@@ -471,6 +497,7 @@ function App() {
       setPreprocessResult(null);
       setGraphGenerationResult(null);
       setNodeSectorImages([]);
+      setNodeOCRResults([]);
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -682,6 +709,7 @@ async function fetchNodeDescriptions(nodeId: string) {
     const data: NodeDescriptionsResponse = await response.json();
     setNodeDescriptions(data.descriptions);
     await fetchNodeSectorImages(nodeId);
+    await fetchNodeOCRResults(nodeId);
   } catch (error) {
     setErrorMessage(
       error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -718,6 +746,36 @@ async function fetchNodeSectorImages(nodeId: string) {
     );
   } finally {
     setLoadingNodeSectorImages(false);
+  }
+}
+async function fetchNodeOCRResults(nodeId: string) {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setLoadingNodeOCRResults(true);
+    setErrorMessage("");
+    setNodeOCRResults([]);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/nodes/${nodeId}/ocr`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OCR結果の取得に失敗しました: ${errorText}`);
+    }
+
+    const data: NodeOCRResponse = await response.json();
+    setNodeOCRResults(data.results);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingNodeOCRResults(false);
   }
 }
 async function fetchReviewTasks() {
@@ -805,6 +863,7 @@ async function approveReviewDescription(descriptionId: string) {
   setSelectedNodeId(null);
   setNodeDescriptions([]);
   setNodeSectorImages([]);
+  setNodeOCRResults([]);
 }
   function getNeighborNodeIds(nodeId: string, edges: MapEdge[]): string[] {
   const neighborIds: string[] = [];
@@ -831,6 +890,7 @@ function moveToNode(nodeId: string) {
   setSelectedNodeId(null);
   setNodeDescriptions([]);
   setNodeSectorImages([]);
+  setNodeOCRResults([]);
   setSelectedSector("front");
 }
 
@@ -1244,6 +1304,10 @@ function renderExplorePage() {
                 (image) => image.sector === description.sector
               );
 
+              const ocrResultsForSector = nodeOCRResults.filter(
+                (ocrResult) => ocrResult.sector === description.sector
+              );
+
               return (
                 <div key={description.description_id} className="descriptionPanel">
                   <h4>
@@ -1265,6 +1329,36 @@ function renderExplorePage() {
                     <p className="smallText">
                       この方向のsector画像はまだ生成されていません。
                     </p>
+                  )}
+
+                  {loadingNodeOCRResults && <p>OCR結果を読み込み中...</p>}
+
+                  {ocrResultsForSector.length > 0 && (
+                    <div className="ocrBox">
+                      <h5>OCR結果</h5>
+                      <ul>
+                        {ocrResultsForSector.map((ocrResult) => (
+                          <li key={ocrResult.ocr_id}>
+                            <strong>{ocrResult.text}</strong>
+                            <br />
+                            <span className="smallText">
+                              sector: {ocrResult.sector} / language:{" "}
+                              {ocrResult.language_hint} / confidence:{" "}
+                              {ocrResult.confidence}
+                            </span>
+                            <br />
+                            <span className="smallText">
+                              bbox: x={ocrResult.bbox.x}, y={ocrResult.bbox.y}, w=
+                              {ocrResult.bbox.width}, h={ocrResult.bbox.height}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!loadingNodeOCRResults && ocrResultsForSector.length === 0 && (
+                    <p className="smallText">この方向のOCR結果はありません。</p>
                   )}
 
                   <h5>簡潔</h5>

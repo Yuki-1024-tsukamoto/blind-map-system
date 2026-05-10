@@ -152,3 +152,16 @@ button {
   border-radius: 12px;
   display: block;
 }
+
+.ocrBox {
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+  background: #fffdf0;
+}
+
+.ocrBox ul {
+  margin: 0;
+  padding-left: 20px;
+}
