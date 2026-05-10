@@ -289,3 +289,30 @@ class GenerateNodeDescriptionsResponse(BaseModel):
     updated_description_ids: list[str]
     failed_sectors: list[str]
     message: str
+
+class LogEventRequest(BaseModel):
+    session_id: str = "local_session"
+    participant_id: str = "local_user"
+    event_type: str
+    node_id: str | None = None
+    sector: str | None = None
+    language: str | None = None
+    granularity: str | None = None
+    query: str | None = None
+    route_start_node_id: str | None = None
+    route_goal_node_id: str | None = None
+    route_mode: str | None = None
+    description_id: str | None = None
+    metadata: dict | None = None
+
+
+class LogEventResponse(BaseModel):
+    project_id: str
+    event_id: str
+    message: str
+
+
+class LogEventsResponse(BaseModel):
+    project_id: str
+    event_count: int
+    events: list[dict]

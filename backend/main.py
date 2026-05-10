@@ -16,6 +16,9 @@ from schemas import (
     GenerateNodeDescriptionsResponse,
     GenerateSectorImagesResponse,
     JobStatusResponse,
+    LogEventRequest,
+    LogEventResponse,
+    LogEventsResponse,
     MapResponse,
     NodeDescriptionsResponse,
     NodeOCRResponse,
@@ -44,6 +47,7 @@ from storage import (
     get_descriptions_dir,
     get_graph_dir,
     get_keyframes_dir,
+    get_logs_dir,
     get_ocr_dir,
     get_raw_dir,
     get_sectors_dir,
@@ -97,6 +101,8 @@ from settings import (
     get_openai_api_key,
     get_openai_description_model,
 )
+
+from logs import append_log_event, read_log_events
 
 SECTOR_IDS = [
     "front",
@@ -1235,4 +1241,38 @@ def generate_gemini_descriptions_for_one_node(
         updated_description_ids=updated_description_ids,
         failed_sectors=failed_sectors,
         message="Gemini descriptions generated for one node",
+    )
+
+@app.post(
+    "/projects/{project_id}/logs",
+    response_model=LogEventResponse,
+)
+def create_log_event(project_id: str, request: LogEventRequest):
+    logs_dir = get_logs_dir(project_id)
+
+    event = append_log_event(
+        logs_dir=logs_dir,
+        project_id=project_id,
+        event_data=request.model_dump(mode="json", exclude_none=True),
+    )
+
+    return LogEventResponse(
+        project_id=project_id,
+        event_id=event["event_id"],
+        message="Log event saved",
+    )
+
+
+@app.get(
+    "/projects/{project_id}/logs",
+    response_model=LogEventsResponse,
+)
+def get_log_events(project_id: str, limit: int = 100):
+    logs_dir = get_logs_dir(project_id)
+    events = read_log_events(logs_dir=logs_dir, limit=limit)
+
+    return LogEventsResponse(
+        project_id=project_id,
+        event_count=len(events),
+        events=events,
     )

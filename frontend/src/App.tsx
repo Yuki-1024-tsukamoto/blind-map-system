@@ -271,6 +271,43 @@ type GenerateDescriptionsResponse = {
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
+async function sendLogEvent(
+  projectId: string | null,
+  eventData: {
+    event_type: string;
+    node_id?: string | null;
+    sector?: string | null;
+    language?: string | null;
+    granularity?: string | null;
+    query?: string | null;
+    route_start_node_id?: string | null;
+    route_goal_node_id?: string | null;
+    route_mode?: string | null;
+    description_id?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+) {
+  if (!projectId) {
+    return;
+  }
+
+  try {
+    await fetch(`${API_BASE_URL}/projects/${projectId}/logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: "local_session",
+        participant_id: "local_user",
+        ...eventData,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to send log event", error);
+  }
+}
+
 function buildMediaUrl(pathOrUrl?: string): string | null {
   if (!pathOrUrl) {
     return null;
@@ -454,6 +491,14 @@ function App() {
 
       const data: SearchResponse = await response.json();
       setSearchResults(data.results);
+
+      sendLogEvent(selectedProjectId, {
+        event_type: "search",
+        query: searchQuery,
+        metadata: {
+          result_count: data.results.length,
+        },
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -494,6 +539,16 @@ function App() {
 
       const data: RouteResponse = await response.json();
       setRouteResult(data);
+
+      sendLogEvent(selectedProjectId, {
+        event_type: "route_calculate",
+        route_start_node_id: startNodeId,
+        route_goal_node_id: goalNodeId,
+        route_mode: "shortest",
+        metadata: {
+          route_length: data.route.length,
+        },
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -735,6 +790,11 @@ async function fetchNodeDescriptions(nodeId: string) {
     setNodeDescriptions(data.descriptions);
     await fetchNodeSectorImages(nodeId);
     await fetchNodeOCRResults(nodeId);
+
+    sendLogEvent(selectedProjectId, {
+      event_type: "view_node_descriptions",
+      node_id: nodeId,
+    });
   } catch (error) {
     setErrorMessage(
       error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -834,7 +894,16 @@ async function generateGeminiDescriptionsForCurrentNode() {
     const data: GenerateNodeDescriptionsResponse = await response.json();
     setGeminiNodeGenerationResult(data);
 
-    // 生成後、現在ノードの説明を再読み込みする
+    sendLogEvent(selectedProjectId, {
+      event_type: "generate_gemini_descriptions",
+      node_id: currentNodeId,
+      metadata: {
+        updated_count: data.updated_count,
+        failed_count: data.failed_count,
+        failed_sectors: data.failed_sectors,
+      },
+    });
+
     await fetchNodeDescriptions(currentNodeId);
   } catch (error) {
     setErrorMessage(
@@ -908,8 +977,18 @@ async function approveReviewDescription(descriptionId: string) {
 
     const data: ReviewDescriptionResponse = await response.json();
     setReviewMessage(
-      `${data.description_id} を承認しました。version=${data.version}`
-    );
+    `${data.description_id} を承認しました。version=${data.version}`
+     );
+
+    sendLogEvent(selectedProjectId, {
+      event_type: "review_approve",
+      node_id: data.node_id,
+      sector: data.sector,
+      description_id: data.description_id,
+      metadata: {
+        version: data.version,
+      },
+    });
 
     await fetchReviewTasks();
   } catch (error) {
@@ -980,6 +1059,16 @@ async function saveEditedReviewDescription(descriptionId: string) {
       `${data.description_id} を編集して保存しました。version=${data.version}`
     );
 
+    sendLogEvent(selectedProjectId, {
+      event_type: "review_edit",
+      node_id: data.node_id,
+      sector: data.sector,
+      description_id: data.description_id,
+      metadata: {
+        version: data.version,
+      },
+    });
+
     setEditingDescriptionId(null);
 
     await fetchReviewTasks();
@@ -1032,6 +1121,8 @@ function cancelEditingDescription() {
 }
 
 function moveToNode(nodeId: string) {
+  const fromNodeId = currentNodeId;
+
   setCurrentNodeId(nodeId);
 
   setSelectedNodeId(null);
@@ -1040,6 +1131,15 @@ function moveToNode(nodeId: string) {
   setNodeOCRResults([]);
   setGeminiNodeGenerationResult(null);
   setSelectedSector("front");
+
+  sendLogEvent(selectedProjectId, {
+    event_type: "move_node",
+    node_id: nodeId,
+    metadata: {
+      from_node_id: fromNodeId,
+      to_node_id: nodeId,
+    },
+  });
 }
 
   function renderProjectPage() {
@@ -1477,11 +1577,19 @@ function renderExplorePage() {
                       type="button"
                       className={
                         selectedSector === description.sector ? "activeSector" : ""
-                    }
-                    onClick={() => setSelectedSector(description.sector)}
-              >
-                    {description.sector_label_ja}
-                  </button>
+                      }
+                      onClick={() => {
+                        setSelectedSector(description.sector);
+                        sendLogEvent(selectedProjectId, {
+                          event_type: "select_sector",
+                          node_id: selectedNodeId,
+                          sector: description.sector,
+                          language: "ja",
+                        });
+                      }}
+                    >
+                      {description.sector_label_ja}
+                    </button>
             ))}
           </div>
 

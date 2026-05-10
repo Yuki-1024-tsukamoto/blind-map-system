@@ -72,3 +72,6 @@ def update_job_status(project_id: str, job_id: str, updates: dict) -> dict:
     save_job_status(project_id, job_data)
 
     return job_data
+
+def get_logs_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "logs"
