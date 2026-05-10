@@ -61,6 +61,7 @@ from graph_queries import (
     build_route_instructions,
     find_route_in_graph,
     search_graph_nodes,
+    search_ocr_results,
 )
 
 from sector_descriptions import (
@@ -70,7 +71,11 @@ from sector_descriptions import (
 
 from review import list_review_tasks, update_description_review
 
-from ocr import load_ocr_results_for_node, run_dummy_ocr_for_project
+from ocr import (
+    load_all_ocr_results,
+    load_ocr_results_for_node,
+    run_dummy_ocr_for_project,
+)
 
 app = FastAPI(
     title="Blind Map System API",
@@ -135,6 +140,9 @@ def search_project(project_id: str, request: SearchRequest):
     graph_dir = get_graph_dir(project_id)
     generated_graph = load_graph(graph_dir)
 
+    combined_results: list[SearchResult] = []
+
+    # 1. graph.json の node_id / name / description を検索
     if generated_graph is not None:
         graph_results = search_graph_nodes(
             graph=generated_graph,
@@ -142,40 +150,66 @@ def search_project(project_id: str, request: SearchRequest):
             language=request.language,
         )
 
-        return SearchResponse(
-            query=request.query,
-            results=[
+        combined_results.extend(
+            [
                 SearchResult(
                     node_id=result["node_id"],
                     name=result["name"],
                     matched_text=result["matched_text"],
                 )
                 for result in graph_results
-            ],
+            ]
         )
 
-    results: list[SearchResult] = []
+    # 2. ocr_results.json の OCR text を検索
+    ocr_dir = get_ocr_dir(project_id)
+    ocr_results_by_node = load_all_ocr_results(ocr_dir)
 
-    for node in DUMMY_NODES:
-        if request.language == "ja":
-            target_text = f"{node.name} {node.description_ja}"
-        else:
-            target_text = f"{node.name} {node.description_en}"
+    if ocr_results_by_node is not None:
+        ocr_results = search_ocr_results(
+            ocr_results_by_node=ocr_results_by_node,
+            query=request.query,
+        )
 
-        if request.query.lower() in target_text.lower():
-            results.append(
+        existing_keys = {
+            f"{result.node_id}:{result.matched_text}"
+            for result in combined_results
+        }
+
+        for result in ocr_results:
+            key = f"{result['node_id']}:{result['matched_text']}"
+            if key in existing_keys:
+                continue
+
+            combined_results.append(
                 SearchResult(
-                    node_id=node.node_id,
-                    name=node.name,
-                    matched_text=target_text,
+                    node_id=result["node_id"],
+                    name=result["name"],
+                    matched_text=result["matched_text"],
                 )
             )
 
+    # 3. graph.json がない場合だけ、旧3ノードダミーデータを検索
+    if generated_graph is None:
+        for node in DUMMY_NODES:
+            if request.language == "ja":
+                target_text = f"{node.name} {node.description_ja}"
+            else:
+                target_text = f"{node.name} {node.description_en}"
+
+            if request.query.lower() in target_text.lower():
+                combined_results.append(
+                    SearchResult(
+                        node_id=node.node_id,
+                        name=node.name,
+                        matched_text=target_text,
+                    )
+                )
+
     return SearchResponse(
         query=request.query,
-        results=results,
+        results=combined_results,
     )
-
 
 @app.post("/projects/{project_id}/route", response_model=RouteResponse)
 def get_route(project_id: str, request: RouteRequest):

@@ -157,3 +157,16 @@ def load_ocr_results_for_node(
                 return results_by_node[candidate]
 
     return []
+
+def load_all_ocr_results(ocr_dir: Path) -> dict[str, list[dict[str, Any]]] | None:
+    """
+    ocr_results.json 全体を読み込む。
+    OCR未生成なら None を返す。
+    """
+    ocr_results_path = ocr_dir / "ocr_results.json"
+
+    if not ocr_results_path.exists():
+        return None
+
+    data = json.loads(ocr_results_path.read_text(encoding="utf-8"))
+    return data.get("results_by_node", {})

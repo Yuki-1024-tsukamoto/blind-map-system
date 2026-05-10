@@ -198,3 +198,46 @@ def build_route_instructions(route: list[str]) -> tuple[list[str], list[str]]:
         instructions_en.append(f"Move from {from_node_id} to {to_node_id}.")
 
     return instructions_ja, instructions_en
+
+def search_ocr_results(
+    ocr_results_by_node: dict,
+    query: str,
+    limit: int = 50,
+) -> list[dict[str, str]]:
+    """
+    ocr_results.json の OCR 結果を検索する。
+    OCR文字列に query が含まれていれば、その node_id を検索結果として返す。
+    """
+    normalized_query = query.strip().casefold()
+
+    if normalized_query == "":
+        return []
+
+    results: list[dict[str, str]] = []
+
+    for node_id, ocr_results in ocr_results_by_node.items():
+        matched_texts: list[str] = []
+
+        for ocr_result in ocr_results:
+            text = str(ocr_result.get("text", ""))
+            sector = str(ocr_result.get("sector", ""))
+            confidence = ocr_result.get("confidence", None)
+
+            if normalized_query in text.casefold():
+                matched_texts.append(
+                    f"OCR text='{text}', sector={sector}, confidence={confidence}"
+                )
+
+        if matched_texts:
+            results.append(
+                {
+                    "node_id": str(node_id),
+                    "name": f"OCR match at {node_id}",
+                    "matched_text": " / ".join(matched_texts),
+                }
+            )
+
+        if len(results) >= limit:
+            break
+
+    return results
