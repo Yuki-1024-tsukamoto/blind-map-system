@@ -94,3 +94,59 @@ class DummyDescriptionProvider(DescriptionProvider):
             "confidence": 0.45 if ocr_texts else 0.3,
             "review_required": True,
         }
+
+class OpenAIDescriptionProvider(DescriptionProvider):
+    """
+    OpenAI Vision API用のProviderスタブ。
+    今回はまだ実APIを呼ばず、未実装エラーを出す。
+    次のステップで実装する。
+    """
+
+    def __init__(self, api_key: str | None, prompt_text: str):
+        self.api_key = api_key
+        self.prompt_text = prompt_text
+
+    def generate_sector_description(
+        self,
+        node_id: str,
+        node_name: str,
+        sector: str,
+        sector_label_ja: str,
+        sector_label_en: str,
+        sector_image_url: str | None,
+        ocr_results: list[dict],
+    ) -> dict:
+        raise NotImplementedError(
+            "OpenAIDescriptionProvider is not implemented yet. "
+            "Use DESCRIPTION_PROVIDER=dummy for now."
+        )
+
+from settings import (
+    get_description_provider_name,
+    get_openai_api_key,
+    get_sector_description_prompt_path,
+)
+
+
+def load_prompt_text() -> str:
+    prompt_path = get_sector_description_prompt_path()
+
+    if not prompt_path.exists():
+        return ""
+
+    return prompt_path.read_text(encoding="utf-8")
+
+
+def create_description_provider() -> DescriptionProvider:
+    provider_name = get_description_provider_name()
+
+    if provider_name == "dummy":
+        return DummyDescriptionProvider()
+
+    if provider_name == "openai":
+        return OpenAIDescriptionProvider(
+            api_key=get_openai_api_key(),
+            prompt_text=load_prompt_text(),
+        )
+
+    raise ValueError(f"Unknown DESCRIPTION_PROVIDER: {provider_name}")
