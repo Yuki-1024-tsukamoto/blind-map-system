@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from description_provider import DummyDescriptionProvider
+
 
 SECTORS = [
     ("front", "前", "front"),
@@ -15,16 +17,86 @@ SECTORS = [
 ]
 
 
+def load_sector_images_data(sectors_dir: Path) -> dict[str, Any] | None:
+    manifest_path = sectors_dir / "sector_images.json"
+
+    if not manifest_path.exists():
+        return None
+
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def load_ocr_data(ocr_dir: Path) -> dict[str, Any] | None:
+    ocr_path = ocr_dir / "ocr_results.json"
+
+    if not ocr_path.exists():
+        return None
+
+    return json.loads(ocr_path.read_text(encoding="utf-8"))
+
+
+def get_sector_image_url(
+    sector_images_data: dict[str, Any] | None,
+    node_id: str,
+    sector: str,
+) -> str | None:
+    if sector_images_data is None:
+        return None
+
+    images_by_node = sector_images_data.get("images_by_node", {})
+    sector_images = images_by_node.get(node_id, [])
+
+    for image in sector_images:
+        if image.get("sector") == sector:
+            return image.get("image_url")
+
+    return None
+
+
+def get_ocr_results_for_sector(
+    ocr_data: dict[str, Any] | None,
+    node_id: str,
+    sector: str,
+) -> list[dict[str, Any]]:
+    if ocr_data is None:
+        return []
+
+    results_by_node = ocr_data.get("results_by_node", {})
+    node_results = results_by_node.get(node_id, [])
+
+    return [
+        result
+        for result in node_results
+        if result.get("sector") == sector
+    ]
+
+
 def generate_dummy_sector_descriptions(
     project_id: str,
     graph: dict[str, Any],
     descriptions_dir: Path,
+    sectors_dir: Path | None = None,
+    ocr_dir: Path | None = None,
 ) -> dict[str, Any]:
     """
-    graph.json の nodes に対して、8方向の仮説明を作る。
-    後でVLM/AI説明生成に差し替えるため、保存形式だけ先に整える。
+    graph.json の nodes に対して、8方向の説明を作る。
+    現段階では DummyDescriptionProvider を使う。
+    sector画像とOCR結果が存在すれば、それも説明文に反映する。
     """
     descriptions_dir.mkdir(parents=True, exist_ok=True)
+
+    sector_images_data = (
+        load_sector_images_data(sectors_dir)
+        if sectors_dir is not None
+        else None
+    )
+    ocr_data = (
+        load_ocr_data(ocr_dir)
+        if ocr_dir is not None
+        else None
+    )
+
+    provider = DummyDescriptionProvider()
 
     descriptions_by_node: dict[str, list[dict[str, Any]]] = {}
     sector_description_count = 0
@@ -40,39 +112,49 @@ def generate_dummy_sector_descriptions(
         for sector_id, sector_label_ja, sector_label_en in SECTORS:
             description_id = f"DESC_{node_id}_{sector_id}"
 
+            sector_image_url = get_sector_image_url(
+                sector_images_data=sector_images_data,
+                node_id=node_id,
+                sector=sector_id,
+            )
+
+            ocr_results = get_ocr_results_for_sector(
+                ocr_data=ocr_data,
+                node_id=node_id,
+                sector=sector_id,
+            )
+
+            generated = provider.generate_sector_description(
+                node_id=node_id,
+                node_name=node_name,
+                sector=sector_id,
+                sector_label_ja=sector_label_ja,
+                sector_label_en=sector_label_en,
+                sector_image_url=sector_image_url,
+                ocr_results=ocr_results,
+            )
+
             description = {
                 "description_id": description_id,
                 "node_id": node_id,
                 "sector": sector_id,
                 "sector_label_ja": sector_label_ja,
                 "sector_label_en": sector_label_en,
-                "ja": {
-                    "brief": f"{node_name}の{sector_label_ja}方向の仮説明です。",
-                    "detailed": (
-                        f"{node_name}の{sector_label_ja}方向を確認しています。"
-                        "現段階では動画フレームから作った仮説明で、後でAI説明生成に置き換えます。"
-                    ),
-                    "very_detailed": (
-                        f"{node_name}の{sector_label_ja}方向に関する詳細な仮説明です。"
-                        "現在はOCR、ランドマーク検出、画像理解をまだ行っていないため、"
-                        "この説明は方向別UIを確認するためのプレースホルダーです。"
-                    ),
-                },
-                "en": {
-                    "brief": f"Temporary description for the {sector_label_en} direction at {node_name}.",
-                    "detailed": (
-                        f"This is a temporary description for the {sector_label_en} direction at {node_name}. "
-                        "It will later be replaced by AI-generated visual descriptions."
-                    ),
-                    "very_detailed": (
-                        f"This is a detailed temporary description for the {sector_label_en} direction at {node_name}. "
-                        "OCR, landmark detection, and image understanding are not yet applied."
-                    ),
-                },
-                "ocr_refs": [],
+                "ja": generated["ja"],
+                "en": generated["en"],
+                "ocr_refs": [
+                    result.get("ocr_id", "")
+                    for result in ocr_results
+                    if result.get("ocr_id")
+                ],
                 "landmark_refs": [],
-                "confidence": 0.3,
-                "review_required": True,
+                "confidence": generated["confidence"],
+                "review_required": generated["review_required"],
+                "version": 1,
+                "approval_status": None,
+                "edited_by": None,
+                "edited_at": None,
+                "notes": None,
             }
 
             node_descriptions.append(description)
@@ -82,7 +164,7 @@ def generate_dummy_sector_descriptions(
 
     output = {
         "project_id": project_id,
-        "description_type": "dummy_sector_descriptions",
+        "description_type": "dummy_provider_sector_descriptions",
         "node_count": len(descriptions_by_node),
         "sector_description_count": sector_description_count,
         "descriptions_by_node": descriptions_by_node,
@@ -105,9 +187,6 @@ def normalize_node_id_for_descriptions(
     node_id: str,
     descriptions_by_node: dict[str, list[dict[str, Any]]],
 ) -> str:
-    """
-    N001 のような入力を N0001 に寄せる補助関数。
-    """
     if node_id in descriptions_by_node:
         return node_id
 
@@ -130,10 +209,6 @@ def load_descriptions_for_node(
     descriptions_dir: Path,
     node_id: str,
 ) -> list[dict[str, Any]] | None:
-    """
-    指定ノードの8方向説明を読み込む。
-    descriptions が未生成なら None を返す。
-    """
     descriptions_path = descriptions_dir / "sector_descriptions.json"
 
     if not descriptions_path.exists():

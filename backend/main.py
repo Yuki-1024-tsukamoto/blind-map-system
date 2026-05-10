@@ -548,6 +548,8 @@ def generate_dummy_descriptions(project_id: str, job_id: str):
             project_id=project_id,
             graph=generated_graph,
             descriptions_dir=descriptions_dir,
+            sectors_dir=get_sectors_dir(project_id),
+            ocr_dir=get_ocr_dir(project_id),
         )
 
         update_job_status(
