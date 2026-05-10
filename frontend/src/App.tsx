@@ -7,7 +7,8 @@ type PageName =
   | "explore"
   | "search"
   | "route"
-  | "review";
+  | "review"
+  | "logs";
 
 type Project = {
   project_id: string;
@@ -267,9 +268,35 @@ type GenerateDescriptionsResponse = {
   node_count: number;
   sector_description_count: number;
 };
+type LogEvent = {
+  event_id: string;
+  project_id: string;
+  timestamp: string;
+  session_id?: string;
+  participant_id?: string;
+  event_type: string;
+  node_id?: string;
+  sector?: string;
+  language?: string;
+  granularity?: string;
+  query?: string;
+  route_start_node_id?: string;
+  route_goal_node_id?: string;
+  route_mode?: string;
+  description_id?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type LogEventsResponse = {
+  project_id: string;
+  event_count: number;
+  events: LogEvent[];
+};
 
 
 const API_BASE_URL = "http://127.0.0.1:8000";
+
+
 
 async function sendLogEvent(
   projectId: string | null,
@@ -331,6 +358,7 @@ const pageLabels: Record<PageName, string> = {
   search: "検索",
   route: "経路訓練",
   review: "レビュー",
+  logs: "ログ",
 };
 
 function App() {
@@ -402,6 +430,8 @@ function App() {
   const [editBriefEn, setEditBriefEn] = useState<string>("");
   const [editDetailedEn, setEditDetailedEn] = useState<string>("");
   const [editVeryDetailedEn, setEditVeryDetailedEn] = useState<string>("");
+  const [recentLogs, setRecentLogs] = useState<LogEvent[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
 
   useEffect(() => {
     async function fetchProjects() {
@@ -499,6 +529,14 @@ function App() {
           result_count: data.results.length,
         },
       });
+
+      sendLogEvent(selectedProjectId, {
+        event_type: "search",
+        query: searchQuery,
+        metadata: {
+          result_count: data.results.length,
+        },
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -539,6 +577,16 @@ function App() {
 
       const data: RouteResponse = await response.json();
       setRouteResult(data);
+
+      sendLogEvent(selectedProjectId, {
+        event_type: "route_calculate",
+        route_start_node_id: startNodeId,
+        route_goal_node_id: goalNodeId,
+        route_mode: "shortest",
+        metadata: {
+          route_length: data.route.length,
+        },
+      });
 
       sendLogEvent(selectedProjectId, {
         event_type: "route_calculate",
@@ -795,6 +843,11 @@ async function fetchNodeDescriptions(nodeId: string) {
       event_type: "view_node_descriptions",
       node_id: nodeId,
     });
+
+    sendLogEvent(selectedProjectId, {
+      event_type: "view_node_descriptions",
+      node_id: nodeId,
+    });
   } catch (error) {
     setErrorMessage(
       error instanceof Error ? error.message : "不明なエラーが発生しました。"
@@ -980,6 +1033,16 @@ async function approveReviewDescription(descriptionId: string) {
     `${data.description_id} を承認しました。version=${data.version}`
      );
 
+     sendLogEvent(selectedProjectId, {
+        event_type: "review_approve",
+        node_id: data.node_id,
+        sector: data.sector,
+        description_id: data.description_id,
+        metadata: {
+          version: data.version,
+        },
+      });
+
     sendLogEvent(selectedProjectId, {
       event_type: "review_approve",
       node_id: data.node_id,
@@ -1069,6 +1132,16 @@ async function saveEditedReviewDescription(descriptionId: string) {
       },
     });
 
+    sendLogEvent(selectedProjectId, {
+      event_type: "review_edit",
+      node_id: data.node_id,
+      sector: data.sector,
+      description_id: data.description_id,
+      metadata: {
+        version: data.version,
+      },
+    });
+
     setEditingDescriptionId(null);
 
     await fetchReviewTasks();
@@ -1078,6 +1151,35 @@ async function saveEditedReviewDescription(descriptionId: string) {
     );
   } finally {
     setUpdatingReviewDescriptionId(null);
+  }
+}
+async function fetchRecentLogs() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setLoadingLogs(true);
+    setErrorMessage("");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/logs?limit=50`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`ログ取得に失敗しました: ${errorText}`);
+    }
+
+    const data: LogEventsResponse = await response.json();
+    setRecentLogs(data.events);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingLogs(false);
   }
 }
 function cancelEditingDescription() {
@@ -1955,14 +2057,73 @@ function renderExplorePage() {
     </section>
   );
 }
+function renderLogsPage() {
+  return (
+    <section className="card">
+      <h2>ログ</h2>
+      <p>
+        ノード移動、説明表示、検索、経路計算、レビュー操作などのイベントを確認します。
+      </p>
+
+      <button type="button" onClick={fetchRecentLogs}>
+        最新ログを読み込む
+      </button>
+
+      {loadingLogs && <p>ログを読み込み中...</p>}
+
+      {!loadingLogs && recentLogs.length === 0 && (
+        <p>ログはまだ読み込まれていません。</p>
+      )}
+
+      {recentLogs.length > 0 && (
+        <div className="resultBox">
+          <h3>最新ログ</h3>
+          <p>表示件数: {recentLogs.length}</p>
+
+          <ul className="compactList">
+            {recentLogs.map((event) => (
+              <li key={event.event_id}>
+                <strong>{event.event_type}</strong>
+                <br />
+                <span className="smallText">
+                  {event.timestamp} / event_id: {event.event_id}
+                </span>
+                <br />
+                {event.node_id && <span>node: {event.node_id}</span>}
+                {event.sector && <span> / sector: {event.sector}</span>}
+                {event.query && <span> / query: {event.query}</span>}
+                {event.route_start_node_id && (
+                  <span>
+                    {" "}
+                    / route: {event.route_start_node_id} →{" "}
+                    {event.route_goal_node_id}
+                  </span>
+                )}
+                {event.description_id && (
+                  <span> / description: {event.description_id}</span>
+                )}
+                {event.metadata && (
+                  <pre className="logMetadata">
+                    {JSON.stringify(event.metadata, null, 2)}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
   function renderCurrentPage() {
-    if (currentPage === "projects") return renderProjectPage();
-    if (currentPage === "upload") return renderUploadPage();
-    if (currentPage === "explore") return renderExplorePage();
-    if (currentPage === "search") return renderSearchPage();
-    if (currentPage === "route") return renderRoutePage();
-    return renderReviewPage();
-  }
+  if (currentPage === "projects") return renderProjectPage();
+  if (currentPage === "upload") return renderUploadPage();
+  if (currentPage === "explore") return renderExplorePage();
+  if (currentPage === "search") return renderSearchPage();
+  if (currentPage === "route") return renderRoutePage();
+  if (currentPage === "review") return renderReviewPage();
+  return renderLogsPage();
+}
 
   return (
     <main className="app">

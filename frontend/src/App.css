@@ -181,3 +181,12 @@ textarea {
   resize: vertical;
   font-family: inherit;
 }
+.logMetadata {
+  margin-top: 8px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+}
