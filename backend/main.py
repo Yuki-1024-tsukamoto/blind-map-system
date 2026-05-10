@@ -43,9 +43,17 @@ from schemas import (
 from storage import (
     ALLOWED_VIDEO_EXTENSIONS,
     DATA_ROOT,
+    get_active_job_id,
     get_derived_dir,
     get_descriptions_dir,
     get_graph_dir,
+    get_job_descriptions_dir,
+    get_job_derived_dir,
+    get_job_graph_dir,
+    get_job_keyframes_dir,
+    get_job_ocr_dir,
+    get_job_raw_dir,
+    get_job_sectors_dir,
     get_keyframes_dir,
     get_logs_dir,
     get_ocr_dir,
@@ -53,6 +61,7 @@ from storage import (
     get_sectors_dir,
     load_job_status,
     save_job_status,
+    set_active_job_id,
     update_job_status,
 )
 from sector_images import (
@@ -87,8 +96,7 @@ from ocr import (
     run_dummy_ocr_for_project,
 )
 
-from description_provider import OpenAIDescriptionProvider, load_prompt_text
-from settings import get_openai_api_key, get_openai_description_model
+
 
 from description_provider import (
     GeminiDescriptionProvider,
@@ -160,6 +168,16 @@ def create_project(project: Project):
 
 @app.get("/projects/{project_id}/map")
 def get_project_map(project_id: str):
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        graph_dir = get_job_graph_dir(project_id, active_job_id)
+        generated_graph = load_graph(graph_dir)
+
+        if generated_graph is not None:
+            return generated_graph
+
+    # 古い形式へのフォールバック
     graph_dir = get_graph_dir(project_id)
     generated_graph = load_graph(graph_dir)
 
@@ -175,7 +193,15 @@ def get_project_map(project_id: str):
 
 @app.post("/projects/{project_id}/search", response_model=SearchResponse)
 def search_project(project_id: str, request: SearchRequest):
-    graph_dir = get_graph_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        graph_dir = get_job_graph_dir(project_id, active_job_id)
+        ocr_dir = get_job_ocr_dir(project_id, active_job_id)
+    else:
+        graph_dir = get_graph_dir(project_id)
+        ocr_dir = get_ocr_dir(project_id)
+
     generated_graph = load_graph(graph_dir)
 
     combined_results: list[SearchResult] = []
@@ -200,7 +226,7 @@ def search_project(project_id: str, request: SearchRequest):
         )
 
     # 2. ocr_results.json の OCR text を検索
-    ocr_dir = get_ocr_dir(project_id)
+    
     ocr_results_by_node = load_all_ocr_results(ocr_dir)
 
     if ocr_results_by_node is not None:
@@ -251,7 +277,13 @@ def search_project(project_id: str, request: SearchRequest):
 
 @app.post("/projects/{project_id}/route", response_model=RouteResponse)
 def get_route(project_id: str, request: RouteRequest):
-    graph_dir = get_graph_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        graph_dir = get_job_graph_dir(project_id, active_job_id)
+    else:
+        graph_dir = get_graph_dir(project_id)
+
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is not None:
@@ -325,10 +357,10 @@ async def upload_video(project_id: str, file: UploadFile = File(...)):
 
     job_id = f"job_{uuid.uuid4().hex[:12]}"
 
-    raw_dir = get_raw_dir(project_id)
+    raw_dir = get_job_raw_dir(project_id, job_id)
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    saved_filename = f"{job_id}_{original_filename}"
+    saved_filename = original_filename
     saved_path = raw_dir / saved_filename
 
     now = datetime.now(timezone.utc).isoformat()
@@ -406,8 +438,8 @@ def preprocess_video(project_id: str, job_id: str):
     if not input_video_path.exists():
         raise HTTPException(status_code=404, detail="Uploaded video file not found")
 
-    derived_dir = get_derived_dir(project_id)
-    keyframes_dir = get_keyframes_dir(project_id)
+    derived_dir = get_job_derived_dir(project_id, job_id)
+    keyframes_dir = get_job_keyframes_dir(project_id, job_id)
 
     update_job_status(
         project_id,
@@ -487,8 +519,8 @@ def generate_dummy_graph(project_id: str, job_id: str):
             detail=f"Job cannot generate graph from status: {job_data['status']}",
         )
 
-    keyframes_dir = get_keyframes_dir(project_id)
-    graph_dir = get_graph_dir(project_id)
+    keyframes_dir = get_job_keyframes_dir(project_id, job_id)
+    graph_dir = get_job_graph_dir(project_id, job_id)
 
     update_job_status(
         project_id,
@@ -521,6 +553,8 @@ def generate_dummy_graph(project_id: str, job_id: str):
                 "error_message": None,
             },
         )
+
+        set_active_job_id(project_id, job_id)
 
         return GenerateGraphResponse(
             project_id=project_id,
@@ -563,13 +597,13 @@ def generate_dummy_descriptions(project_id: str, job_id: str):
             detail=f"Job cannot generate descriptions from status: {job_data['status']}",
         )
 
-    graph_dir = get_graph_dir(project_id)
+    graph_dir = get_job_graph_dir(project_id, job_id)
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is None:
         raise HTTPException(status_code=404, detail="Generated graph not found")
 
-    descriptions_dir = get_descriptions_dir(project_id)
+    descriptions_dir = get_job_descriptions_dir(project_id, job_id)
 
     update_job_status(
         project_id,
@@ -586,8 +620,8 @@ def generate_dummy_descriptions(project_id: str, job_id: str):
             project_id=project_id,
             graph=generated_graph,
             descriptions_dir=descriptions_dir,
-            sectors_dir=get_sectors_dir(project_id),
-            ocr_dir=get_ocr_dir(project_id),
+            sectors_dir=get_job_sectors_dir(project_id, job_id),
+            ocr_dir=get_job_ocr_dir(project_id, job_id),
         )
 
         update_job_status(
@@ -631,7 +665,12 @@ def generate_dummy_descriptions(project_id: str, job_id: str):
     response_model=NodeDescriptionsResponse,
 )
 def get_node_descriptions(project_id: str, node_id: str):
-    descriptions_dir = get_descriptions_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        descriptions_dir = get_job_descriptions_dir(project_id, active_job_id)
+    else:
+        descriptions_dir = get_descriptions_dir(project_id)
     descriptions = load_descriptions_for_node(descriptions_dir, node_id)
 
     if descriptions is None:
@@ -660,7 +699,12 @@ def get_node_descriptions(project_id: str, node_id: str):
     response_model=ReviewTasksResponse,
 )
 def get_review_tasks(project_id: str, limit: int = 50):
-    descriptions_dir = get_descriptions_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        descriptions_dir = get_job_descriptions_dir(project_id, active_job_id)
+    else:
+        descriptions_dir = get_descriptions_dir(project_id)
     tasks = list_review_tasks(
         descriptions_dir=descriptions_dir,
         limit=limit,
@@ -685,7 +729,12 @@ def review_description(
     description_id: str,
     request: ReviewDescriptionRequest,
 ):
-    descriptions_dir = get_descriptions_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        descriptions_dir = get_job_descriptions_dir(project_id, active_job_id)
+    else:
+        descriptions_dir = get_descriptions_dir(project_id)
 
     updated_description = update_description_review(
         descriptions_dir=descriptions_dir,
@@ -724,13 +773,13 @@ def generate_sector_images(project_id: str, job_id: str):
             detail=f"Job cannot generate sector images from status: {job_data['status']}",
         )
 
-    graph_dir = get_graph_dir(project_id)
+    graph_dir = get_job_graph_dir(project_id, job_id)
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is None:
         raise HTTPException(status_code=404, detail="Generated graph not found")
 
-    sectors_dir = get_sectors_dir(project_id)
+    sectors_dir = get_job_sectors_dir(project_id, job_id)
 
     update_job_status(
         project_id,
@@ -790,7 +839,12 @@ def generate_sector_images(project_id: str, job_id: str):
     response_model=NodeSectorImagesResponse,
 )
 def get_node_sector_images(project_id: str, node_id: str):
-    sectors_dir = get_sectors_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        sectors_dir = get_job_sectors_dir(project_id, active_job_id)
+    else:
+        sectors_dir = get_sectors_dir(project_id)
     images = load_sector_images_for_node(sectors_dir, node_id)
 
     if images is None:
@@ -831,8 +885,8 @@ def run_dummy_ocr(project_id: str, job_id: str):
             detail=f"Job cannot run OCR from status: {job_data['status']}",
         )
 
-    sectors_dir = get_sectors_dir(project_id)
-    ocr_dir = get_ocr_dir(project_id)
+    sectors_dir = get_job_sectors_dir(project_id, job_id)
+    ocr_dir = get_job_ocr_dir(project_id, job_id)
 
     update_job_status(
         project_id,
@@ -892,7 +946,12 @@ def run_dummy_ocr(project_id: str, job_id: str):
     response_model=NodeOCRResponse,
 )
 def get_node_ocr_results(project_id: str, node_id: str):
-    ocr_dir = get_ocr_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is not None:
+        ocr_dir = get_job_ocr_dir(project_id, active_job_id)
+    else:
+        ocr_dir = get_ocr_dir(project_id)
     results = load_ocr_results_for_node(ocr_dir, node_id)
 
     if results is None:
@@ -995,7 +1054,12 @@ def generate_gemini_description_for_one_sector(
     node_id: str,
     sector: str,
 ):
-    graph_dir = get_graph_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is None:
+        raise HTTPException(status_code=400, detail="Active job is not set")
+
+    graph_dir = get_job_graph_dir(project_id, active_job_id)
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is None:
@@ -1010,7 +1074,7 @@ def generate_gemini_description_for_one_sector(
     if node is None:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
-    sectors_dir = get_sectors_dir(project_id)
+    sectors_dir = get_job_sectors_dir(project_id, active_job_id)
     sector_images = load_sector_images_for_node(sectors_dir, node_id)
 
     if sector_images is None:
@@ -1028,7 +1092,7 @@ def generate_gemini_description_for_one_sector(
             detail=f"Sector image not found: {node_id}/{sector}",
         )
 
-    ocr_dir = get_ocr_dir(project_id)
+    ocr_dir = get_job_ocr_dir(project_id, active_job_id)
     ocr_results = load_ocr_results_for_node(ocr_dir, node_id) or []
     ocr_results_for_sector = [
         result for result in ocr_results if result.get("sector") == sector
@@ -1068,7 +1132,12 @@ def generate_and_save_gemini_description_for_one_sector(
     node_id: str,
     sector: str,
 ):
-    graph_dir = get_graph_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is None:
+        raise HTTPException(status_code=400, detail="Active job is not set")
+
+    graph_dir = get_job_graph_dir(project_id, active_job_id)
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is None:
@@ -1083,7 +1152,7 @@ def generate_and_save_gemini_description_for_one_sector(
     if node is None:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
-    sectors_dir = get_sectors_dir(project_id)
+    sectors_dir = get_job_sectors_dir(project_id, active_job_id)
     sector_images = load_sector_images_for_node(sectors_dir, node_id)
 
     if sector_images is None:
@@ -1101,7 +1170,7 @@ def generate_and_save_gemini_description_for_one_sector(
             detail=f"Sector image not found: {node_id}/{sector}",
         )
 
-    ocr_dir = get_ocr_dir(project_id)
+    ocr_dir = get_job_ocr_dir(project_id, active_job_id)
     ocr_results = load_ocr_results_for_node(ocr_dir, node_id) or []
     ocr_results_for_sector = [
         result for result in ocr_results if result.get("sector") == sector
@@ -1125,7 +1194,7 @@ def generate_and_save_gemini_description_for_one_sector(
     )
 
     description_id = f"DESC_{node_id}_{sector}"
-    descriptions_dir = get_descriptions_dir(project_id)
+    descriptions_dir = get_job_descriptions_dir(project_id, active_job_id)
 
     updated_description = update_description_from_ai_generation(
         descriptions_dir=descriptions_dir,
@@ -1155,7 +1224,12 @@ def generate_gemini_descriptions_for_one_node(
     project_id: str,
     node_id: str,
 ):
-    graph_dir = get_graph_dir(project_id)
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is None:
+        raise HTTPException(status_code=400, detail="Active job is not set")
+
+    graph_dir = get_job_graph_dir(project_id, active_job_id)
     generated_graph = load_graph(graph_dir)
 
     if generated_graph is None:
@@ -1170,16 +1244,16 @@ def generate_gemini_descriptions_for_one_node(
     if node is None:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
-    sectors_dir = get_sectors_dir(project_id)
+    sectors_dir = get_job_sectors_dir(project_id, active_job_id)
     sector_images = load_sector_images_for_node(sectors_dir, node_id)
 
     if sector_images is None:
         raise HTTPException(status_code=404, detail="Sector images not generated")
 
-    ocr_dir = get_ocr_dir(project_id)
+    ocr_dir = get_job_ocr_dir(project_id, active_job_id)
     ocr_results = load_ocr_results_for_node(ocr_dir, node_id) or []
 
-    descriptions_dir = get_descriptions_dir(project_id)
+    descriptions_dir = get_job_descriptions_dir(project_id, active_job_id)
 
     provider = GeminiDescriptionProvider(
         api_key=get_gemini_api_key(),
