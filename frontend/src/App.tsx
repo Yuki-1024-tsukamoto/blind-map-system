@@ -160,6 +160,17 @@ type GenerateGraphResponse = {
   edge_count: number;
 };
 
+type GenerateNodeDescriptionsResponse = {
+  project_id: string;
+  node_id: string;
+  provider: string;
+  updated_count: number;
+  failed_count: number;
+  updated_description_ids: string[];
+  failed_sectors: string[];
+  message: string;
+};
+
 type SectorText = {
   brief: string;
   detailed: string;
@@ -312,6 +323,10 @@ function App() {
     useState<GenerateGraphResponse | null>(null);
   const [descriptionGenerationResult, setDescriptionGenerationResult] =
     useState<GenerateDescriptionsResponse | null>(null);
+  const [geminiNodeGenerationResult, setGeminiNodeGenerationResult] =
+    useState<GenerateNodeDescriptionsResponse | null>(null);
+  const [loadingGeminiNodeGeneration, setLoadingGeminiNodeGeneration] =
+    useState<boolean>(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeDescriptions, setNodeDescriptions] = useState<SectorDescription[]>([]);
   const [selectedSector, setSelectedSector] = useState<string>("front");
@@ -778,6 +793,47 @@ async function fetchNodeOCRResults(nodeId: string) {
     setLoadingNodeOCRResults(false);
   }
 }
+async function generateGeminiDescriptionsForCurrentNode() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  if (!currentNodeId) {
+    setErrorMessage("現在ノードが選択されていません。");
+    return;
+  }
+
+  try {
+    setLoadingGeminiNodeGeneration(true);
+    setErrorMessage("");
+    setGeminiNodeGenerationResult(null);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/nodes/${currentNodeId}/generate-gemini-descriptions`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini説明生成に失敗しました: ${errorText}`);
+    }
+
+    const data: GenerateNodeDescriptionsResponse = await response.json();
+    setGeminiNodeGenerationResult(data);
+
+    // 生成後、現在ノードの説明を再読み込みする
+    await fetchNodeDescriptions(currentNodeId);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingGeminiNodeGeneration(false);
+  }
+}
 async function fetchReviewTasks() {
   if (!selectedProjectId) {
     setErrorMessage("プロジェクトが選択されていません。");
@@ -864,6 +920,7 @@ async function approveReviewDescription(descriptionId: string) {
   setNodeDescriptions([]);
   setNodeSectorImages([]);
   setNodeOCRResults([]);
+  setGeminiNodeGenerationResult(null);
 }
   function getNeighborNodeIds(nodeId: string, edges: MapEdge[]): string[] {
   const neighborIds: string[] = [];
@@ -891,6 +948,7 @@ function moveToNode(nodeId: string) {
   setNodeDescriptions([]);
   setNodeSectorImages([]);
   setNodeOCRResults([]);
+  setGeminiNodeGenerationResult(null);
   setSelectedSector("front");
 }
 
@@ -1161,14 +1219,56 @@ function renderExplorePage() {
                   </div>
                 )}
 
-                <div className="buttonRow">
+               <div className="buttonRow">
                   <button
                     type="button"
                     onClick={() => fetchNodeDescriptions(currentNode.node_id)}
                   >
                     このノードの8方向説明を表示
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={generateGeminiDescriptionsForCurrentNode}
+                    disabled={loadingGeminiNodeGeneration}
+                  >
+                    {loadingGeminiNodeGeneration
+                      ? "Gemini生成中..."
+                      : "このノードの8方向をGemini生成"}
+                  </button>
                 </div>
+                {geminiNodeGenerationResult && (
+                  <div className="resultBox">
+                    <h4>Gemini生成結果</h4>
+                    <p>node_id: {geminiNodeGenerationResult.node_id}</p>
+                    <p>updated_count: {geminiNodeGenerationResult.updated_count}</p>
+                    <p>failed_count: {geminiNodeGenerationResult.failed_count}</p>
+
+                    {geminiNodeGenerationResult.updated_description_ids.length > 0 && (
+                      <>
+                        <p>更新されたdescription:</p>
+                        <ul>
+                          {geminiNodeGenerationResult.updated_description_ids.map(
+                            (descriptionId) => (
+                              <li key={descriptionId}>{descriptionId}</li>
+                            )
+                          )}
+                        </ul>
+                      </>
+                    )}
+
+                    {geminiNodeGenerationResult.failed_sectors.length > 0 && (
+                      <>
+                        <p>失敗したsector:</p>
+                        <ul>
+                          {geminiNodeGenerationResult.failed_sectors.map((sector) => (
+                            <li key={sector}>{sector}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <h4>隣接ノードへ移動</h4>
 
