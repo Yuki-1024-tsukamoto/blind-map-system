@@ -355,6 +355,16 @@ function App() {
   const [loadingNodeDescriptions, setLoadingNodeDescriptions] =
     useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(
+    null
+  );
+  const [editBriefJa, setEditBriefJa] = useState<string>("");
+  const [editDetailedJa, setEditDetailedJa] = useState<string>("");
+  const [editVeryDetailedJa, setEditVeryDetailedJa] = useState<string>("");
+
+  const [editBriefEn, setEditBriefEn] = useState<string>("");
+  const [editDetailedEn, setEditDetailedEn] = useState<string>("");
+  const [editVeryDetailedEn, setEditVeryDetailedEn] = useState<string>("");
 
   useEffect(() => {
     async function fetchProjects() {
@@ -909,6 +919,86 @@ async function approveReviewDescription(descriptionId: string) {
   } finally {
     setUpdatingReviewDescriptionId(null);
   }
+}
+function startEditingDescription(task: SectorDescription) {
+  setEditingDescriptionId(task.description_id);
+
+  setEditBriefJa(task.ja.brief);
+  setEditDetailedJa(task.ja.detailed);
+  setEditVeryDetailedJa(task.ja.very_detailed);
+
+  setEditBriefEn(task.en.brief);
+  setEditDetailedEn(task.en.detailed);
+  setEditVeryDetailedEn(task.en.very_detailed);
+
+  setReviewMessage("");
+}
+async function saveEditedReviewDescription(descriptionId: string) {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  try {
+    setUpdatingReviewDescriptionId(descriptionId);
+    setErrorMessage("");
+    setReviewMessage("");
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/review/description/${descriptionId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          approval_status: "edited",
+          ja: {
+            brief: editBriefJa,
+            detailed: editDetailedJa,
+            very_detailed: editVeryDetailedJa,
+          },
+          en: {
+            brief: editBriefEn,
+            detailed: editDetailedEn,
+            very_detailed: editVeryDetailedEn,
+          },
+          notes: "frontend review edit",
+          edited_by: "local_user",
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`レビュー編集の保存に失敗しました: ${errorText}`);
+    }
+
+    const data: ReviewDescriptionResponse = await response.json();
+
+    setReviewMessage(
+      `${data.description_id} を編集して保存しました。version=${data.version}`
+    );
+
+    setEditingDescriptionId(null);
+
+    await fetchReviewTasks();
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setUpdatingReviewDescriptionId(null);
+  }
+}
+function cancelEditingDescription() {
+  setEditingDescriptionId(null);
+  setEditBriefJa("");
+  setEditDetailedJa("");
+  setEditVeryDetailedJa("");
+  setEditBriefEn("");
+  setEditDetailedEn("");
+  setEditVeryDetailedEn("");
 }
   function handleProjectChange(projectId: string) {
   setSelectedProjectId(projectId);
@@ -1637,28 +1727,118 @@ function renderExplorePage() {
                 <h4>詳細説明</h4>
                 <p>{task.ja.detailed}</p>
 
+              <div className="buttonRow">
+                <button
+                  type="button"
+                  onClick={() => approveReviewDescription(task.description_id)}
+                  disabled={updatingReviewDescriptionId === task.description_id}
+                >
+                  {updatingReviewDescriptionId === task.description_id
+                    ? "承認中..."
+                    : "承認する"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => startEditingDescription(task)}
+                >
+                  編集する
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fetchNodeDescriptions(task.node_id)}
+                >
+                  探索用の8方向説明として確認
+                </button>
+              </div>
+              {editingDescriptionId === task.description_id && (
+              <div className="editBox">
+                <h4>説明文を編集</h4>
+
+                <div className="formRow">
+                  <label htmlFor={`editBriefJa-${task.description_id}`}>
+                    日本語 brief
+                  </label>
+                  <textarea
+                    id={`editBriefJa-${task.description_id}`}
+                    value={editBriefJa}
+                    onChange={(event) => setEditBriefJa(event.target.value)}
+                  />
+                </div>
+
+                <div className="formRow">
+                  <label htmlFor={`editDetailedJa-${task.description_id}`}>
+                    日本語 detailed
+                  </label>
+                  <textarea
+                    id={`editDetailedJa-${task.description_id}`}
+                    value={editDetailedJa}
+                    onChange={(event) => setEditDetailedJa(event.target.value)}
+                  />
+                </div>
+
+                <div className="formRow">
+                  <label htmlFor={`editVeryDetailedJa-${task.description_id}`}>
+                    日本語 very_detailed
+                  </label>
+                  <textarea
+                    id={`editVeryDetailedJa-${task.description_id}`}
+                    value={editVeryDetailedJa}
+                    onChange={(event) => setEditVeryDetailedJa(event.target.value)}
+                  />
+                </div>
+
+                <div className="formRow">
+                  <label htmlFor={`editBriefEn-${task.description_id}`}>
+                    English brief
+                  </label>
+                  <textarea
+                    id={`editBriefEn-${task.description_id}`}
+                    value={editBriefEn}
+                    onChange={(event) => setEditBriefEn(event.target.value)}
+                  />
+                </div>
+
+                <div className="formRow">
+                  <label htmlFor={`editDetailedEn-${task.description_id}`}>
+                    English detailed
+                  </label>
+                  <textarea
+                    id={`editDetailedEn-${task.description_id}`}
+                    value={editDetailedEn}
+                    onChange={(event) => setEditDetailedEn(event.target.value)}
+                  />
+                </div>
+
+                <div className="formRow">
+                  <label htmlFor={`editVeryDetailedEn-${task.description_id}`}>
+                    English very_detailed
+                  </label>
+                  <textarea
+                    id={`editVeryDetailedEn-${task.description_id}`}
+                    value={editVeryDetailedEn}
+                    onChange={(event) => setEditVeryDetailedEn(event.target.value)}
+                  />
+                </div>
+
                 <div className="buttonRow">
                   <button
                     type="button"
-                    onClick={() =>
-                      approveReviewDescription(task.description_id)
-                    }
-                    disabled={
-                      updatingReviewDescriptionId === task.description_id
-                    }
+                    onClick={() => saveEditedReviewDescription(task.description_id)}
+                    disabled={updatingReviewDescriptionId === task.description_id}
                   >
                     {updatingReviewDescriptionId === task.description_id
-                      ? "承認中..."
-                      : "承認する"}
+                      ? "保存中..."
+                      : "編集して保存"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => fetchNodeDescriptions(task.node_id)}
-                  >
-                    探索用の8方向説明として確認
+                  <button type="button" onClick={cancelEditingDescription}>
+                    キャンセル
                   </button>
                 </div>
+              </div>
+            )}
               </li>
             ))}
           </ul>

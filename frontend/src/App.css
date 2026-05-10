@@ -165,3 +165,19 @@ button {
   margin: 0;
   padding-left: 20px;
 }
+
+.editBox {
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  background: #f6f8fa;
+}
+
+textarea {
+  min-height: 84px;
+  font-size: 16px;
+  padding: 10px 12px;
+  resize: vertical;
+  font-family: inherit;
+}
