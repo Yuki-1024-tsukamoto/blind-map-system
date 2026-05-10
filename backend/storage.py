@@ -39,6 +39,9 @@ def get_descriptions_dir(project_id: str) -> Path:
 def get_sectors_dir(project_id: str) -> Path:
     return get_project_dir(project_id) / "sectors"
 
+def get_ocr_dir(project_id: str) -> Path:
+    return get_project_dir(project_id) / "ocr"
+
 
 def save_job_status(project_id: str, job_data: dict) -> None:
     jobs_dir = get_jobs_dir(project_id)

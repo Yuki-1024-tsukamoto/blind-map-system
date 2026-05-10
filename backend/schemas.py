@@ -103,6 +103,10 @@ class JobStatusResponse(BaseModel):
     sectors_dir: str | None = None
     sector_image_count: int | None = None
 
+    ocr_results_path: str | None = None
+    ocr_result_count: int | None = None
+
+
 
 class PreprocessResponse(BaseModel):
     project_id: str
@@ -230,3 +234,36 @@ class NodeSectorImagesResponse(BaseModel):
     project_id: str
     node_id: str
     images: list[SectorImageInfo]
+
+class OCRBBox(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class OCRResult(BaseModel):
+    ocr_id: str
+    node_id: str
+    sector: str
+    text: str
+    language_hint: str
+    bbox: OCRBBox
+    confidence: float
+
+
+class RunOCRResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    ocr_results_path: str
+    node_count: int
+    ocr_result_count: int
+
+
+class NodeOCRResponse(BaseModel):
+    project_id: str
+    node_id: str
+    results: list[OCRResult]

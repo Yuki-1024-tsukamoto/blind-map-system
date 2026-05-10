@@ -16,7 +16,9 @@ from schemas import (
     JobStatusResponse,
     MapResponse,
     NodeDescriptionsResponse,
+    NodeOCRResponse,
     NodeSectorImagesResponse,
+    OCRResult,
     PreprocessResponse,
     Project,
     ReviewDescriptionRequest,
@@ -24,6 +26,7 @@ from schemas import (
     ReviewTasksResponse,
     RouteRequest,
     RouteResponse,
+    RunOCRResponse,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -39,6 +42,7 @@ from storage import (
     get_descriptions_dir,
     get_graph_dir,
     get_keyframes_dir,
+    get_ocr_dir,
     get_raw_dir,
     get_sectors_dir,
     load_job_status,
@@ -65,6 +69,8 @@ from sector_descriptions import (
 )
 
 from review import list_review_tasks, update_description_review
+
+from ocr import load_ocr_results_for_node, run_dummy_ocr_for_project
 
 app = FastAPI(
     title="Blind Map System API",
@@ -731,5 +737,101 @@ def get_node_sector_images(project_id: str, node_id: str):
         images=[
             SectorImageInfo(**image)
             for image in images
+        ],
+    )
+
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/run-dummy-ocr",
+    response_model=RunOCRResponse,
+)
+def run_dummy_ocr(project_id: str, job_id: str):
+    job_data = load_job_status(project_id, job_id)
+
+    if job_data["status"] not in [
+        "sector_images_generated",
+        "dummy_ocr_completed",
+        "dummy_descriptions_generated",
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot run OCR from status: {job_data['status']}",
+        )
+
+    sectors_dir = get_sectors_dir(project_id)
+    ocr_dir = get_ocr_dir(project_id)
+
+    update_job_status(
+        project_id,
+        job_id,
+        {
+            "status": "running_dummy_ocr",
+            "step": "run_dummy_ocr",
+            "error_message": None,
+        },
+    )
+
+    try:
+        result = run_dummy_ocr_for_project(
+            project_id=project_id,
+            sectors_dir=sectors_dir,
+            ocr_dir=ocr_dir,
+        )
+
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "dummy_ocr_completed",
+                "step": "run_dummy_ocr",
+                "ocr_results_path": result["ocr_results_path"],
+                "ocr_result_count": result["ocr_result_count"],
+                "error_message": None,
+            },
+        )
+
+        return RunOCRResponse(
+            project_id=project_id,
+            job_id=job_id,
+            status="dummy_ocr_completed",
+            step="run_dummy_ocr",
+            message="Dummy OCR completed",
+            ocr_results_path=result["ocr_results_path"],
+            node_count=result["node_count"],
+            ocr_result_count=result["ocr_result_count"],
+        )
+
+    except Exception as error:
+        update_job_status(
+            project_id,
+            job_id,
+            {
+                "status": "failed",
+                "step": "run_dummy_ocr",
+                "error_message": str(error),
+            },
+        )
+        raise
+
+
+@app.get(
+    "/projects/{project_id}/nodes/{node_id}/ocr",
+    response_model=NodeOCRResponse,
+)
+def get_node_ocr_results(project_id: str, node_id: str):
+    ocr_dir = get_ocr_dir(project_id)
+    results = load_ocr_results_for_node(ocr_dir, node_id)
+
+    if results is None:
+        raise HTTPException(
+            status_code=404,
+            detail="OCR results have not been generated yet",
+        )
+
+    return NodeOCRResponse(
+        project_id=project_id,
+        node_id=node_id,
+        results=[
+            OCRResult(**result)
+            for result in results
         ],
     )
