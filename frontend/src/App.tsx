@@ -135,6 +135,13 @@ type JobStatusResponse = {
   sector_description_count?: number | null;
 };
 
+type ActiveJobResponse = {
+  project_id: string;
+  active_job_id: string | null;
+  job_status: JobStatusResponse | null;
+  message: string;
+};
+
 type PreprocessResponse = {
   project_id: string;
   job_id: string;
@@ -396,6 +403,8 @@ function App() {
   const [uploadResult, setUploadResult] =
     useState<UploadVideoResponse | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatusResponse | null>(null);
+  const [activeJob, setActiveJob] = useState<ActiveJobResponse | null>(null);
+  const [loadingActiveJob, setLoadingActiveJob] = useState<boolean>(false);
   const [preprocessResult, setPreprocessResult] =
     useState<PreprocessResponse | null>(null);
   const [graphGenerationResult, setGraphGenerationResult] =
@@ -480,6 +489,12 @@ function App() {
 
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+  if (selectedProjectId) {
+    fetchActiveJob(selectedProjectId);
+  }
+}, [selectedProjectId]);
 
   async function fetchMap(projectId: string) {
     try {
@@ -709,6 +724,38 @@ function App() {
     }
   }
 
+  async function fetchActiveJob(projectId?: string) {
+    const targetProjectId = projectId ?? selectedProjectId;
+
+    if (!targetProjectId) {
+      setErrorMessage("プロジェクトが選択されていません。");
+      return;
+    }
+
+    try {
+      setLoadingActiveJob(true);
+      setErrorMessage("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/projects/${targetProjectId}/active-job`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`active job の取得に失敗しました: ${errorText}`);
+      }
+
+      const data: ActiveJobResponse = await response.json();
+      setActiveJob(data);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "不明なエラーが発生しました。"
+      );
+    } finally {
+      setLoadingActiveJob(false);
+    }
+  }
+
   async function startPreprocess() {
     if (!selectedProjectId) {
       setErrorMessage("プロジェクトが選択されていません。");
@@ -865,6 +912,7 @@ async function runBasicPipeline() {
     setBasicPipelineResult(data);
 
     await fetchJobStatus();
+    await fetchActiveJob(selectedProjectId);
     await fetchMap(selectedProjectId);
   } catch (error) {
     setErrorMessage(
@@ -1347,6 +1395,34 @@ function moveToNode(nodeId: string) {
     return (
       <section className="card">
         <h2>アップロード</h2>
+        <div className="resultBox">
+          <h3>現在の active job</h3>
+
+          <button
+            type="button"
+            onClick={() => fetchActiveJob(selectedProjectId ?? undefined)}
+            disabled={loadingActiveJob || !selectedProjectId}
+            aria-label="active jobを再読み込み"
+          >
+            {loadingActiveJob ? "active job 読み込み中..." : "active jobを再読み込み"}
+          </button>
+
+          {activeJob ? (
+            activeJob.active_job_id ? (
+              <div>
+                <p>project_id: {activeJob.project_id}</p>
+                <p>active_job_id: {activeJob.active_job_id}</p>
+                <p>status: {activeJob.job_status?.status ?? "不明"}</p>
+                <p>step: {activeJob.job_status?.step ?? "不明"}</p>
+                <p>message: {activeJob.message}</p>
+              </div>
+            ) : (
+              <p>active job はまだ設定されていません。</p>
+            )
+          ) : (
+            <p>active job はまだ読み込まれていません。</p>
+          )}
+        </div>
         <p>
           360度動画をアップロードし、前処理、仮グラフ生成まで順番に実行します。
         </p>
