@@ -10,6 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from dummy_data import DUMMY_EDGES, DUMMY_NODES, DUMMY_PROJECTS
 
 from schemas import (
+    ActiveJobResponse,
+    BasicPipelineResponse,
+    BasicPipelineStepResult,
     GenerateAndSaveDescriptionResponse,
     GenerateDescriptionsResponse,
     GenerateGraphResponse,
@@ -164,6 +167,27 @@ def create_project(project: Project):
     # 受け取ったprojectをそのまま返すだけです。
     # 後でDBまたはJSON保存に置き換えます。
     return project
+
+@app.get("/projects/{project_id}/active-job", response_model=ActiveJobResponse)
+def get_active_job(project_id: str):
+    active_job_id = get_active_job_id(project_id)
+
+    if active_job_id is None:
+        return ActiveJobResponse(
+            project_id=project_id,
+            active_job_id=None,
+            job_status=None,
+            message="No active job is set",
+        )
+
+    job_data = load_job_status(project_id, active_job_id)
+
+    return ActiveJobResponse(
+        project_id=project_id,
+        active_job_id=active_job_id,
+        job_status=JobStatusResponse(**job_data),
+        message="Active job found",
+    )
 
 
 @app.get("/projects/{project_id}/map")
@@ -590,9 +614,11 @@ def generate_dummy_descriptions(project_id: str, job_id: str):
     job_data = load_job_status(project_id, job_id)
 
     if job_data["status"] not in [
-        "graph_generated",
-        "dummy_descriptions_generated",
-    ]:
+    "graph_generated",
+    "sector_images_generated",
+    "dummy_ocr_completed",
+    "dummy_descriptions_generated",
+]:
         raise HTTPException(
             status_code=400,
             detail=f"Job cannot generate descriptions from status: {job_data['status']}",
@@ -942,6 +968,99 @@ def run_dummy_ocr(project_id: str, job_id: str):
         )
         raise
 
+@app.post(
+    "/projects/{project_id}/jobs/{job_id}/run-basic-pipeline",
+    response_model=BasicPipelineResponse,
+)
+def run_basic_pipeline(project_id: str, job_id: str):
+    steps: list[BasicPipelineStepResult] = []
+
+    job_data = load_job_status(project_id, job_id)
+    current_status = job_data["status"]
+
+    allowed_statuses = [
+        "uploaded",
+        "failed",
+        "preprocessed",
+        "graph_generated",
+        "sector_images_generated",
+        "dummy_ocr_completed",
+        "dummy_descriptions_generated",
+    ]
+
+    if current_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job cannot run basic pipeline from status: {current_status}",
+        )
+
+    if current_status in ["uploaded", "failed"]:
+        preprocess_result = preprocess_video(project_id, job_id)
+        steps.append(
+            BasicPipelineStepResult(
+                step=preprocess_result.step,
+                status=preprocess_result.status,
+                message=preprocess_result.message,
+            )
+        )
+        current_status = load_job_status(project_id, job_id)["status"]
+
+    if current_status == "preprocessed":
+        graph_result = generate_dummy_graph(project_id, job_id)
+        steps.append(
+            BasicPipelineStepResult(
+                step=graph_result.step,
+                status=graph_result.status,
+                message=graph_result.message,
+            )
+        )
+        current_status = load_job_status(project_id, job_id)["status"]
+
+    if current_status == "graph_generated":
+        sector_result = generate_sector_images(project_id, job_id)
+        steps.append(
+            BasicPipelineStepResult(
+                step=sector_result.step,
+                status=sector_result.status,
+                message=sector_result.message,
+            )
+        )
+        current_status = load_job_status(project_id, job_id)["status"]
+
+    if current_status == "sector_images_generated":
+        ocr_result = run_dummy_ocr(project_id, job_id)
+        steps.append(
+            BasicPipelineStepResult(
+                step=ocr_result.step,
+                status=ocr_result.status,
+                message=ocr_result.message,
+            )
+        )
+        current_status = load_job_status(project_id, job_id)["status"]
+
+    if current_status == "dummy_ocr_completed":
+        descriptions_result = generate_dummy_descriptions(project_id, job_id)
+        steps.append(
+            BasicPipelineStepResult(
+                step=descriptions_result.step,
+                status=descriptions_result.status,
+                message=descriptions_result.message,
+            )
+        )
+        current_status = load_job_status(project_id, job_id)["status"]
+
+    set_active_job_id(project_id, job_id)
+
+    final_job_data = load_job_status(project_id, job_id)
+
+    return BasicPipelineResponse(
+        project_id=project_id,
+        job_id=job_id,
+        status=final_job_data["status"],
+        step=final_job_data["step"],
+        message="Basic pipeline completed",
+        steps=steps,
+    )
 
 @app.get(
     "/projects/{project_id}/nodes/{node_id}/ocr",

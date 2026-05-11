@@ -106,6 +106,25 @@ class JobStatusResponse(BaseModel):
     ocr_results_path: str | None = None
     ocr_result_count: int | None = None
 
+class ActiveJobResponse(BaseModel):
+    project_id: str
+    active_job_id: str | None = None
+    job_status: JobStatusResponse | None = None
+    message: str
+
+class BasicPipelineStepResult(BaseModel):
+    step: str
+    status: str
+    message: str
+
+
+class BasicPipelineResponse(BaseModel):
+    project_id: str
+    job_id: str
+    status: str
+    step: str
+    message: str
+    steps: list[BasicPipelineStepResult]
 
 
 class PreprocessResponse(BaseModel):
