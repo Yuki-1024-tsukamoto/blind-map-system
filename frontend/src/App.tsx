@@ -268,6 +268,20 @@ type GenerateDescriptionsResponse = {
   node_count: number;
   sector_description_count: number;
 };
+type BasicPipelineStepResult = {
+  step: string;
+  status: string;
+  message: string;
+};
+
+type BasicPipelineResponse = {
+  project_id: string;
+  job_id: string;
+  status: string;
+  step: string;
+  message: string;
+  steps: BasicPipelineStepResult[];
+};
 type LogEvent = {
   event_id: string;
   project_id: string;
@@ -388,6 +402,10 @@ function App() {
     useState<GenerateGraphResponse | null>(null);
   const [descriptionGenerationResult, setDescriptionGenerationResult] =
     useState<GenerateDescriptionsResponse | null>(null);
+  const [basicPipelineResult, setBasicPipelineResult] =
+  useState<BasicPipelineResponse | null>(null);
+  const [loadingBasicPipeline, setLoadingBasicPipeline] =
+  useState<boolean>(false);
   const [geminiNodeGenerationResult, setGeminiNodeGenerationResult] =
     useState<GenerateNodeDescriptionsResponse | null>(null);
   const [loadingGeminiNodeGeneration, setLoadingGeminiNodeGeneration] =
@@ -626,6 +644,8 @@ function App() {
       setGraphGenerationResult(null);
       setNodeSectorImages([]);
       setNodeOCRResults([]);
+      setBasicPipelineResult(null);
+      setDescriptionGenerationResult(null);
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -810,6 +830,48 @@ function App() {
     );
   } finally {
     setLoadingDescriptionGeneration(false);
+  }
+}
+async function runBasicPipeline() {
+  if (!selectedProjectId) {
+    setErrorMessage("プロジェクトが選択されていません。");
+    return;
+  }
+
+  if (!uploadResult) {
+    setErrorMessage("先に動画をアップロードしてください。");
+    return;
+  }
+
+  try {
+    setLoadingBasicPipeline(true);
+    setErrorMessage("");
+    setBasicPipelineResult(null);
+    setJobStatus(null);
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects/${selectedProjectId}/jobs/${uploadResult.job_id}/run-basic-pipeline`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`基本パイプライン実行に失敗しました: ${errorText}`);
+    }
+
+    const data: BasicPipelineResponse = await response.json();
+    setBasicPipelineResult(data);
+
+    await fetchJobStatus();
+    await fetchMap(selectedProjectId);
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "不明なエラーが発生しました。"
+    );
+  } finally {
+    setLoadingBasicPipeline(false);
   }
 }
 async function fetchNodeDescriptions(nodeId: string) {
@@ -1340,6 +1402,36 @@ function moveToNode(nodeId: string) {
                 前処理を開始
               </button>
             </div>
+          </div>
+        )}
+        {uploadResult && (
+          <div className="buttonRow">
+            <button
+              type="button"
+              onClick={runBasicPipeline}
+              disabled={loadingBasicPipeline}
+              aria-label="基本パイプラインを実行"
+            >
+              {loadingBasicPipeline ? "基本パイプライン実行中..." : "基本パイプラインを実行"}
+            </button>
+          </div>
+        )}
+        {basicPipelineResult && (
+          <div className="resultBox">
+            <h3>基本パイプライン実行結果</h3>
+            <p>job_id: {basicPipelineResult.job_id}</p>
+            <p>status: {basicPipelineResult.status}</p>
+            <p>step: {basicPipelineResult.step}</p>
+            <p>message: {basicPipelineResult.message}</p>
+
+            <h4>実行ステップ</h4>
+            <ol>
+              {basicPipelineResult.steps.map((step) => (
+                <li key={step.step}>
+                  <strong>{step.step}</strong>: {step.status} / {step.message}
+                </li>
+              ))}
+            </ol>
           </div>
         )}
 
