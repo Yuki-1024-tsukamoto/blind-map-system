@@ -535,6 +535,7 @@ def generate_dummy_graph(project_id: str, job_id: str):
     try:
         graph_result = generate_dummy_graph_from_keyframes(
             project_id=project_id,
+            job_id=job_id,
             keyframes_dir=keyframes_dir,
             graph_dir=graph_dir,
         )

@@ -4,6 +4,7 @@ from pathlib import Path
 
 def generate_dummy_graph_from_keyframes(
     project_id: str,
+    job_id: str,
     keyframes_dir: Path,
     graph_dir: Path,
 ) -> dict:
@@ -40,7 +41,7 @@ def generate_dummy_graph_from_keyframes(
             "heading_reference": "video_order",
             "media": {
                 "keyframe_image": str(keyframe_path),
-                "keyframe_url": f"/data/{project_id}/frames/keyframes/{keyframe_path.name}",
+                "keyframe_url": f"/data/{project_id}/captures/{job_id}/frames/keyframes/{keyframe_path.name}",
             },
             "name": f"仮ノード {index}",
             "description_ja": f"動画から抽出された代表フレーム {index} に対応する仮ノードです。",
