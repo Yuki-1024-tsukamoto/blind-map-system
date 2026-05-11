@@ -795,6 +795,7 @@ def generate_sector_images(project_id: str, job_id: str):
     try:
         result = generate_sector_images_from_graph(
             project_id=project_id,
+            job_id=job_id,
             graph=generated_graph,
             sectors_dir=sectors_dir,
         )

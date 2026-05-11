@@ -21,6 +21,7 @@ def crop_8_sectors_from_equirectangular(
     image_path: Path,
     output_node_dir: Path,
     project_id: str,
+    job_id: str,
     node_id: str,
 ) -> list[dict[str, str]]:
     """
@@ -55,7 +56,7 @@ def crop_8_sectors_from_equirectangular(
                     "sector_label_ja": sector_label_ja,
                     "sector_label_en": sector_label_en,
                     "image_path": str(output_path),
-                    "image_url": f"/data/{project_id}/sectors/{node_id}/{sector_id}.jpg",
+                    "image_url": f"/data/{project_id}/captures/{job_id}/sectors/{node_id}/{sector_id}.jpg",
                 }
             )
 
@@ -64,6 +65,7 @@ def crop_8_sectors_from_equirectangular(
 
 def generate_sector_images_from_graph(
     project_id: str,
+    job_id: str,
     graph: dict[str, Any],
     sectors_dir: Path,
 ) -> dict[str, Any]:
@@ -98,6 +100,7 @@ def generate_sector_images_from_graph(
             image_path=keyframe_path,
             output_node_dir=output_node_dir,
             project_id=project_id,
+            job_id=job_id,
             node_id=node_id,
         )
 
