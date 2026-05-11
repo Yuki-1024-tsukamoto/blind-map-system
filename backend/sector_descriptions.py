@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from description_provider import create_description_provider
+from description_provider import DummyDescriptionProvider
 
 
 SECTORS = [
@@ -112,7 +112,7 @@ def generate_dummy_sector_descriptions(
         else None
     )
 
-    provider = create_description_provider()
+    provider = DummyDescriptionProvider()
 
     descriptions_by_node: dict[str, list[dict[str, Any]]] = {}
     sector_description_count = 0
